@@ -1,65 +1,158 @@
 'use strict';
 
+// todo: remove para from forms
+// todo: auto add in pokemon that aren't in inventory
+// todo: compare ivs of pokemon
+// todo: display ivs on field tooltips or side context menu
+// potential todo: if pokemon is named note it in attributes
+// potential todo: make gender its own key value pair instead of in attrs.
+// profit
+
 var $ = unsafeWindow.$;
-var totalPokemon = 0;
 var pkmnListPromiseList = [];
 var inventory = [];
 
-let button = $(`<li data-name="Inventory"><a title="Count Inventory"><img src="https://pfq-static.com/img/navbar/dex.png"> Inventory </a></li>`);
-$(button).on("click", () => {
-	new Promise((resolve, reject) => {
-		unsafeWindow.ajax("fields/fieldlist", {
-			uid: 0
-		}).success((response) => {
-//			var numberOfFields = 3;  // testing code
-			var numberOfFields = response.fields.length;
-			for (let i = 0; i < numberOfFields; i++) {
-				pkmnListPromiseList.push(new Promise((resolve, reject) => {
-					unsafeWindow.ajax("fields/pkmnlist", {
-						"fieldid": i,
-						"tooltip": "train"
-					}).success((response) => {
-						console.log("Retrieved Pokemon Field " + i + "/" + numberOfFields);
-						$(response.html).find(".fieldmontip").each(function() {
-							var pokemonName = $(this).find(".icons").parent().text().substring(10, $(this).find(".icons").parent().text().length - 1);
-							var pokemonForm = $(this).find(".forme").length != 0 ? "(" + $(this).find(".forme").text().substring(7) + ")" : "";
-							var pokemonGender = "";
-							$(this).find("img[title]").each(function() {
-								pokemonGender += $(this).attr("title");
-							});
-							var pokemonIVs = "";
-							var pokemonPerfectIVs = 0;
-							var pokemonIVTotal = 0;
-							$(this).find(".tooltip_content").parent().find("span").slice(0,6).each(function() {
-								pokemonIVs += $(this).text() + "/";
-								if ($(this).text() == "31") { ++pokemonPerfectIVs; }
-								pokemonIVTotal += parseInt($(this).text());
-							})
-							pokemonIVs = pokemonIVs.substring(0, pokemonIVs.length - 1);
-							var pokemonNature = $(this).find(".item").prev().clone().children().remove().end().text().substring(1);
-							inventory.push([pokemonName,pokemonForm,pokemonGender,pokemonPerfectIVs,pokemonIVs,pokemonIVTotal,pokemonNature]);
-							++totalPokemon;
-						});
-						resolve(response);
-					}).failure((response) => {
-						console.log("Error reading Pokemon Field " + i);
-						reject(response);
-					});
-				}));
+let button = $("<li data-name=\"IV Inventory\"><a title=\"Count Inventory\" style=\"cursor: pointer;\"><img src=\"https://pfq-static.com/img/navbar/dex.png\"> (...) Inventory </a></li>");
+
+new Promise((resolve, reject) => {
+	unsafeWindow.ajax("farm/notepad", {
+		"directory": null
+	}).success((response) => {
+		var fileID = 0;
+		console.log("Retrieved list of user's notepad files");
+
+		$(response.html).find("a[data-file]").each(function(index) {
+			if ($(this).text() == "PokemonInventory.json") {
+				fileID = $(this).data("file");
+				console.log("Inventory found!");
+
+				new Promise((resolve, reject) => {
+          unsafeWindow.ajax("farm/notepad", {
+            "directory": null,
+            "file": fileID
+          }).success((response) => {
+						inventory = JSON.parse($(response.html).find("textarea").text());
+						console.log(inventory);
+						$(button).find("a").contents().filter(function(){
+							return (this.nodeType == 3);
+						}).replaceWith(" (" + inventory.length + ") Inventory");
+            resolve(response);
+          }).failure((response) => {
+            console.log("Error reading Pokemon Field " + i);
+            reject(response);
+          });
+        });
+				// may rewrite each function to add break here
 			}
-			pkmnListPromiseList[numberOfFields-1].then(function(value) {
-				console.log("Read all Pokemon fields and built inventory");
-				console.log(inventory);
-				$(button).html("<a title=\"Count Inventory\"><img src=\"https://pfq-static.com/img/navbar/dex.png\"> (" + totalPokemon + ") Inventory </a>")
-				// download inventory
-				/*var blob = new Blob([inventory], {type: "text/plain;charset=utf-8"});
-				saveAs(blob, "iv_inventory.txt");*/
-			});
-			resolve(response);
-		}).failure((response) => {
-			console.log("Error reading Pokemon field list");
-			reject(response);
 		});
+
+		if (!fileID) {
+			console.log("Inventory does not exist, creating...");
+			new Promise((resolve, reject) => {
+	      unsafeWindow.ajax("fields/fieldlist", {
+	        uid: 0
+	      }).success((response) => {
+	  			var numberOfFields = 1;  // testing code
+//	        var numberOfFields = response.fields.length;
+
+	        for (let i = 0; i < numberOfFields; i++) {
+	          pkmnListPromiseList.push(new Promise((resolve, reject) => {
+	            unsafeWindow.ajax("fields/pkmnlist", {
+	              "fieldid": i,
+	              "tooltip": "train"
+	            }).success((response) => {
+	              console.log("Retrieved Pokemon Field " + i + "/" + numberOfFields);
+	              $(response.html).find(".fieldmontip").each(function() {
+	                var pokemon = {};
+	                pokemon["species"] = $(this).find(".icons").parent().text().substring(10, $(this).find(".icons").parent().text().length - 1);
+	                pokemon["form"] = $(this).find(".forme").length != 0 ? "(" + $(this).find(".forme").text().substring(7) + ")" : null;
+
+	                var pokemonAttributes = [];
+	                $(this).find("img[title]").each(function() {
+	                  pokemonAttributes.push($(this).attr("title"));
+	                });
+
+	                pokemon["attributes"] = pokemonAttributes;
+
+	                var html_pokemonIVs = $(this).find(".tooltip_content").parent().find("span").slice(0,6); // if not sliced 7-12 indexes are evs
+									var pokemonIVs = {};
+									pokemonIVs["health"] = parseInt($(html_pokemonIVs[0]).text());
+									pokemonIVs["attack"] = parseInt($(html_pokemonIVs[1]).text());
+									pokemonIVs["defence"] = parseInt($(html_pokemonIVs[2]).text());
+									pokemonIVs["special_attack"] = parseInt($(html_pokemonIVs[3]).text());
+									pokemonIVs["special_defence"] = parseInt($(html_pokemonIVs[4]).text());
+									pokemonIVs["speed"] = parseInt($(html_pokemonIVs[5]).text());
+
+									var pokemonPerfectIVs = 0;
+	                var pokemonIVTotal = 0;
+	                for (var x = 0; x < html_pokemonIVs.length; ++x){
+	                  if ($(html_pokemonIVs[x]).text() == "31") { ++pokemonPerfectIVs; }
+                    pokemonIVTotal += parseInt($(html_pokemonIVs[x]).text());
+	                }
+
+	                pokemon["perfect_ivs"] = pokemonPerfectIVs;
+	                pokemon["ivs"] = pokemonIVs;
+	                pokemon["iv_total"] = pokemonIVTotal;
+	                pokemon["nature"] = $(this).find(".item").prev().clone().children().remove().end().text().substring(1);
+	                inventory.push(pokemon);
+	              });
+	              resolve(response);
+	            }).failure((response) => {
+	              console.log("Error reading Pokemon Field " + i);
+	              reject(response);
+	            });
+	          }));
+	        }
+
+	        pkmnListPromiseList[numberOfFields-1].then(function() {
+	          console.log("Read all Pokemon fields and built inventory");
+	          console.log(inventory);
+	          new Promise((resolve, reject) => {
+              unsafeWindow.ajax("farm/notepad", {
+                "directory": "",
+                "mode": "newfile",
+                "save": {
+                  "name": "PokemonInventory.json"
+                }
+              }).success((response) => {
+                fileID = $($(response.html)[1]).data("fileform");
+                console.log("Created file PokemonInventory.json in user's notepad");
+                new Promise((resolve, reject) => {
+                  unsafeWindow.ajax("farm/notepad", {
+                    "file": fileID,
+                    "mode": "save",
+                    "save": {
+                      "name": "PokemonInventory.json",
+                      "content": JSON.stringify(inventory)
+                    }
+                  }).success((response) => {
+                    console.log("Wrote inventory to PokemonInventory.json");
+                    resolve(response);
+                  }).failure((response) => {
+                    console.log("Error reading Pokemon field list");
+                    reject(response);
+                  });
+                });
+                resolve(response);
+              }).failure((response) => {
+                console.log("Error creating PokemonInventory.json file");
+                reject(response);
+              });
+            });
+	          $(button).find("a").contents().filter(function(){
+              return (this.nodeType == 3);
+            }).replaceWith(" (" + inventory.length + ") Inventory");
+	        });
+	        resolve(response);
+	      }).failure((response) => {
+	        console.log("Error reading Pokemon field list");
+	        reject(response);
+	      });
+	    });
+    }
+	}).failure((response) => {
+		console.log("Error reading user's notepad directory");
+		reject(response);
 	});
 });
 
