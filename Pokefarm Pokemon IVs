@@ -2,10 +2,10 @@
 // ==UserScript==
 // @name         Pokefarm Pokemon IVs
 // @namespace    http://tampermonkey.net/
-// @version      2024-01-26
+// @version      2024-02-13
 // @description  Display and catalogue IVs for a user's owned Pokemon in Pokefarm
 // @author       Nathan Coy
-// @match        https://pokefarm.com/dojo/training
+// @match        https://pokefarm.com/fields
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=pokefarm.com
 // @require      file://C:/Users/natha/IdeaProjects/Pokefarm-Pokemon-IVs/IVs.js
 // @grant        unsafeWindow
