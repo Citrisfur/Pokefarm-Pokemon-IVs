@@ -1,8 +1,11 @@
 'use strict';
 
-// todo: auto add in pokemon that aren't in inventory
+// todo: auto add in pokemon that aren't in inventory when seen in field
+// todo: remove pokemon that get released, individually or by mass
+// todo: part two: remove pokemon that get traded also
 // todo: compare ivs of pokemon
 // todo: display ivs on field tooltips or side context menu
+// todo: perfect iv display on other people's fields
 // profit
 
 var $ = unsafeWindow.$;
@@ -178,36 +181,37 @@ function loadInventory() {
 async function waitForInventory() {
 	await loadInventory();
 	grabFieldPokemon();
+	// this menu gets generated when the first viewed field loads
+	// should be replaced with a DOM observer to wait for element to exist
+	$('#field_field > .menu > label[data-menu="release"]').on("click", loopMassReleasePokemon);
 }
 
 
+var fieldPokemonIDs = [];
 async function grabFieldPokemon() {
+	// loop until inventory loads?
+	// may not be loaded even with async if user changes field beforehand
 	if (inventory.length) {
 		// wait for pokemon in field to load
 		// if this delay is removed reports the pokemon in the last field which actually sounds somewhat useful also
 		await new Promise(r => setTimeout(r, 1000));
 		let fieldPokemonList = $("div.field div.fieldmontip");
 		if (fieldPokemonList.length) {
-			console.log(fieldPokemonList);
-
-			let fieldPokemonIDs = [];
+			fieldPokemonIDs = {};
 			fieldPokemonList.each(function() {
 				let fieldPokemonID = $(this).find("h3").eq(0).find("a").attr("href").slice(-5);
-				fieldPokemonIDs.push(fieldPokemonID);
-				let found = false;
-				for (let pokemon of inventory) {
-					if (fieldPokemonID == pokemon["id"]) {
-						console.log("pokemon with id " + fieldPokemonID + " found in inventory");
-						found = true;
-						break;
-					}
-				}
-				if (!found) {
+				let invPokemon = inventory.find(pokemon => pokemon.id === fieldPokemonID);
+
+				if (invPokemon) {
+					$(this).parent().prev().children().eq(1).before(
+						'<p style="display: unset; position: absolute; bottom: 0px; right: 0px; margin: 0px;">'
+						+ invPokemon.perfect_ivs + '</p>');
+						// move out of if statement, should be added to this array in both cases
+						fieldPokemonIDs[fieldPokemonID] = invPokemon.perfect_ivs;
+				} else {
 					console.log("pokemon with id " + fieldPokemonID + " was not found in inventory, adding...");
 				}
 			});
-
-			console.log(fieldPokemonIDs);
 		} else {
 			console.log("didn't find any pokemon");
 		}
@@ -218,10 +222,24 @@ async function grabFieldPokemon() {
 
 
 async function loopFieldListButtons() {
+	// wait for pokefarm to generate jump field list buttons (list of fields when clicking on field name)
+	// should be replaced with a DOM observer to wait for element to exist
 	await new Promise(r => setTimeout(r, 1000));
-	let jumpFieldList = $("#fieldjumpnav > li > button");
-	jumpFieldList.each(function() {
+	$("#fieldjumpnav > li > button").each(function() {
 		$(this).on("click", grabFieldPokemon);
+	});
+}
+
+
+async function loopMassReleasePokemon() {
+	// wait for pokefarm to generate mass release pokemon list labels
+	// should be replaced with a DOM observer to wait for element to exist
+	await new Promise(r => setTimeout(r, 1000));
+	$(".bulkpokemonlist > ul > li > label > .icons").each(function() {
+		console.log($(this).parent().find("input").val());
+		console.log(fieldPokemonIDs[$(this).parent().find("input").val()]);
+		$(this).after('<p style="margin-block-start: unset; margin-block-end: 1pt; text-align: center;">'
+			+ fieldPokemonIDs[$(this).parent().find("input").val()] + ' Perfect IVs</p>');
 	});
 }
 
