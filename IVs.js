@@ -174,9 +174,65 @@ function loadInventory() {
 	});
 }
 
+
+async function waitForInventory() {
+	await loadInventory();
+	grabFieldPokemon();
+}
+
+
+async function grabFieldPokemon() {
+	if (inventory.length) {
+		// wait for pokemon in field to load
+		// if this delay is removed reports the pokemon in the last field which actually sounds somewhat useful also
+		await new Promise(r => setTimeout(r, 1000));
+		let fieldPokemonList = $("div.field div.fieldmontip");
+		if (fieldPokemonList.length) {
+			console.log(fieldPokemonList);
+
+			let fieldPokemonIDs = [];
+			fieldPokemonList.each(function() {
+				let fieldPokemonID = $(this).find("h3").eq(0).find("a").attr("href").slice(-5);
+				fieldPokemonIDs.push(fieldPokemonID);
+				let found = false;
+				for (let pokemon of inventory) {
+					if (fieldPokemonID == pokemon["id"]) {
+						console.log("pokemon with id " + fieldPokemonID + " found in inventory");
+						found = true;
+						break;
+					}
+				}
+				if (!found) {
+					console.log("pokemon with id " + fieldPokemonID + " was not found in inventory, adding...");
+				}
+			});
+
+			console.log(fieldPokemonIDs);
+		} else {
+			console.log("didn't find any pokemon");
+		}
+	}
+
+	return;
+}
+
+
+async function loopFieldListButtons() {
+	await new Promise(r => setTimeout(r, 1000));
+	let jumpFieldList = $("#fieldjumpnav > li > button");
+	jumpFieldList.each(function() {
+		$(this).on("click", grabFieldPokemon);
+	});
+}
+
+$('button[data-action="jump"]').on("click", loopFieldListButtons);
+$('button[data-action="previous"]').on("click", grabFieldPokemon);
+$('button[data-action="next"]').on("click", grabFieldPokemon);
+
 $(button).on("click", () => {
 	let popup = confirm("WARNING!\n\nThis will remove and rebuild your inventory files (PokemonInventoryN.json) in your Pokefarm notepad. This should only be run if absolutely necessary.\n\nNote: If your inventory files are missing, the script will rebuild them automatically without the need to run this operation. To do so, simply refresh this page.\n\nThe rebuild will take longer the more Pokemon you own and the busier the site is. Click OK to continue.");
 	if (popup) {
+		clearInterval(grabFieldPokemonInterval);
 		for (let fileID of fileIDs) {
 			new Promise((resolve, reject) => {
 				unsafeWindow.ajax("farm/notepad", {
@@ -200,47 +256,8 @@ $(button).on("click", () => {
 		$(button).find("a").contents().filter(function(){
 			return (this.nodeType == 3);
 		}).replaceWith(" (...) Inventory");
-		loadInventory();
+		waitForInventory();
 	}
 });
-
-
-var grabFieldPokemonInterval = 0;
-async function waitForInventory() {
-	await loadInventory();
-	grabFieldPokemon();
-	// Don't like this, maybe can change later to check if user changes fields
-	grabFieldPokemonInterval = setInterval(grabFieldPokemon, 5000);
-}
-
-
-function grabFieldPokemon() {
-	let fieldPokemonList = $("div.field div.fieldmontip");
-	if (fieldPokemonList.length) {
-		console.log(fieldPokemonList);
-
-		let fieldPokemonIDs = [];
-		fieldPokemonList.each(function() {
-			let fieldPokemonID = $(this).find("h3").eq(0).find("a").attr("href").slice(-5);
-			fieldPokemonIDs.push(fieldPokemonID);
-			let found = false;
-			for (let pokemon of inventory) {
-				if (fieldPokemonID == pokemon["id"]) {
-					console.log("pokemon with id " + fieldPokemonID + " found in inventory");
-					found = true;
-					break;
-				}
-			}
-			if (!found) {
-				console.log("pokemon with id " + fieldPokemonID + " was not found in inventory, adding...");
-			}
-		});
-
-		console.log(fieldPokemonIDs);
-	} else {
-		console.log("didn't find any pokemon");
-	}
-	return;
-}
 
 waitForInventory();
