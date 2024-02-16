@@ -47,7 +47,7 @@ function loadInventory() {
 				if (inventoryFilePromiseList.length) {
 					console.log(inventoryFilePromiseList.length + " inventory file(s) found...");
 					inventoryFilePromiseList.slice(-1)[0].then(function() {
-						$(button).find("a").contents().filter(function(){
+						$(button).find("a").contents().filter(function() {
 							return (this.nodeType == 3);
 						}).replaceWith(" (" + inventory.length + ") Inventory");
 						console.log(inventory);
@@ -155,7 +155,7 @@ function loadInventory() {
 									});
 								}
 
-								$(button).find("a").contents().filter(function(){
+								$(button).find("a").contents().filter(function() {
 									return (this.nodeType == 3);
 								}).replaceWith(" (" + inventory.length + ") Inventory");
 
@@ -178,79 +178,116 @@ function loadInventory() {
 }
 
 
-async function waitForInventory() {
-	await loadInventory();
-	grabFieldPokemon();
-	// this menu gets generated when the first viewed field loads
-	// should be replaced with a DOM observer to wait for element to exist
-	$('#field_field > .menu > label[data-menu="release"]').on("click", loopMassReleasePokemon);
+function waitForElm(selector) {
+	return new Promise((resolve, reject) => {
+		if ($(selector).length) {
+			return resolve($(selector));
+		}
+
+		const observer = new MutationObserver(() => {
+			if ($(selector).length) {
+				observer.disconnect();
+				resolve($(selector));
+			}
+		});
+
+		observer.observe(document.body, {
+			childList: true,
+			subtree: true
+		});
+
+		// for empty fields, mostly
+		setTimeout(() => reject(null), 2000);
+	});
 }
 
 
-var fieldPokemonIDs = [];
-async function grabFieldPokemon() {
-	// loop until inventory loads?
-	// may not be loaded even with async if user changes field beforehand
-	if (inventory.length) {
-		// wait for pokemon in field to load
-		// if this delay is removed reports the pokemon in the last field which actually sounds somewhat useful also
-		await new Promise(r => setTimeout(r, 1000));
-		let fieldPokemonList = $("div.field div.fieldmontip");
-		if (fieldPokemonList.length) {
-			fieldPokemonIDs = {};
-			fieldPokemonList.each(function() {
-				let fieldPokemonID = $(this).find("h3").eq(0).find("a").attr("href").slice(-5);
-				let invPokemon = inventory.find(pokemon => pokemon.id === fieldPokemonID);
+// load inventory outside of field grab function since we only want to load it once
+async function waitForInventory() {
+	await loadInventory();
+	fieldPokemonHandler();
+}
 
-				if (invPokemon) {
-					$(this).parent().prev().children().eq(1).before(
-						'<p style="display: unset; position: absolute; bottom: 0px; right: 0px; margin: 0px;">'
-						+ invPokemon.perfect_ivs + '</p>');
-						// move out of if statement, should be added to this array in both cases
-						fieldPokemonIDs[fieldPokemonID] = invPokemon.perfect_ivs;
-				} else {
-					console.log("pokemon with id " + fieldPokemonID + " was not found in inventory, adding...");
-				}
+
+var fieldPokemonIDs = {};
+async function fieldPokemonHandler() {
+	if (inventory.length) {
+		// wait for previous field to unload
+    // ideally this function would run after the pokefarm button's action is registered instead of this delay
+    await new Promise(r => setTimeout(r, 500));
+    // displays perfect iv count on pokemon in mass release list
+    waitForElm('#field_field > .menu > label[data-menu="release"]').then((elm) => {
+      elm.on("click", async () => {
+        await waitForElm(".bulkpokemonlist > ul > li > label > .icons").then((elm) => {
+          elm.each(function() {
+            $(this).after('<p style="margin-block-start: unset; margin-block-end: 1pt; text-align: center;">'
+              + fieldPokemonIDs[$(this).parent().find("input").val()] + ' Perfect IVs</p>');
+          });
+        });
+      });
+    });
+		try {
+			await waitForElm("#field_field > div.field > .tooltip_content > .fieldmontip").then((fieldPokemonList) => {
+				fieldPokemonIDs = {};
+				fieldPokemonList.each(function() {
+					let fieldPokemonID = $(this).find("h3").eq(0).find("a").attr("href").slice(-5);
+					let invPokemon = inventory.find(pokemon => pokemon.id === fieldPokemonID);
+
+					if (invPokemon) {
+						let color = "white";
+						switch(invPokemon.perfect_ivs) {
+							case 0:
+								color = "red";
+								break;
+							case 1:
+								color = "violet";
+								break;
+							case 5:
+								color = "green";
+								break;
+							case 6:
+								color = "gold";
+						}
+						
+						$(this).parent().prev().children().eq(1).before(
+							'<p style="display: unset; position: absolute; bottom: 0px; right: 0px; margin: 0px; background: #000000;'
+								+ ' z-index: 1; color: ' + color + '";>' + invPokemon.perfect_ivs + '</p>');
+							// move out of if statement, should be added to this array in both cases
+							fieldPokemonIDs[fieldPokemonID] = invPokemon.perfect_ivs;
+					} else {
+						console.log("pokemon with id " + fieldPokemonID + " was not found in inventory, adding...");
+					}
+				});
 			});
-		} else {
+		} catch (error) {
+			// needs testing on empty field (i have none :( )
 			console.log("didn't find any pokemon");
+			console.log(error);
 		}
+
+		return;
 	}
 
 	return;
 }
 
-
-async function loopFieldListButtons() {
-	// wait for pokefarm to generate jump field list buttons (list of fields when clicking on field name)
-	// should be replaced with a DOM observer to wait for element to exist
-	await new Promise(r => setTimeout(r, 1000));
-	$("#fieldjumpnav > li > button").each(function() {
-		$(this).on("click", grabFieldPokemon);
-	});
-}
-
-
-async function loopMassReleasePokemon() {
-	// wait for pokefarm to generate mass release pokemon list labels
-	// should be replaced with a DOM observer to wait for element to exist
-	await new Promise(r => setTimeout(r, 1000));
-	$(".bulkpokemonlist > ul > li > label > .icons").each(function() {
-		console.log($(this).parent().find("input").val());
-		console.log(fieldPokemonIDs[$(this).parent().find("input").val()]);
-		$(this).after('<p style="margin-block-start: unset; margin-block-end: 1pt; text-align: center;">'
-			+ fieldPokemonIDs[$(this).parent().find("input").val()] + ' Perfect IVs</p>');
-	});
-}
-
-$('button[data-action="jump"]').on("click", loopFieldListButtons);
-$('button[data-action="previous"]').on("click", grabFieldPokemon);
-$('button[data-action="next"]').on("click", grabFieldPokemon);
+// adds click listeners to previous, next, and all field jump buttons
+$('button[data-action="jump"]').on("click", async () => {
+  await waitForElm("#fieldjumpnav > li > button").then((elm) => {
+    elm.each(function() {
+      $(this).on("click", fieldPokemonHandler);
+    });
+  });
+});
+$('button[data-action="previous"]').on("click", fieldPokemonHandler);
+$('button[data-action="next"]').on("click", fieldPokemonHandler);
 
 $(button).on("click", () => {
-	let popup = confirm("WARNING!\n\nThis will remove and rebuild your inventory files (PokemonInventoryN.json) in your Pokefarm notepad. This should only be run if absolutely necessary.\n\nNote: If your inventory files are missing, the script will rebuild them automatically without the need to run this operation. To do so, simply refresh this page.\n\nThe rebuild will take longer the more Pokemon you own and the busier the site is. Click OK to continue.");
+	let popup = confirm("WARNING!\n\nThis will remove and rebuild your inventory files (the PokemonInventory.json files)"
+	+ " in your Pokefarm notepad. This should only be run if absolutely necessary.\n\nNote: If your inventory files are"
+	+ " completely missing, the script will rebuild them automatically without the need to run this operation."
+	+ " To do so, simply refresh the page.\n\nThe rebuild will take about a minute. Click OK to continue.");
 	if (popup) {
-		clearInterval(grabFieldPokemonInterval);
 		for (let fileID of fileIDs) {
 			new Promise((resolve, reject) => {
 				unsafeWindow.ajax("farm/notepad", {
@@ -271,7 +308,7 @@ $(button).on("click", () => {
 		}
 		fileIDs = [];
 		inventory = [];
-		$(button).find("a").contents().filter(function(){
+		$(button).find("a").contents().filter(function() {
 			return (this.nodeType == 3);
 		}).replaceWith(" (...) Inventory");
 		waitForInventory();
