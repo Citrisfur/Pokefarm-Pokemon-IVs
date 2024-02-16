@@ -1,19 +1,30 @@
 'use strict';
 
-// todo: auto add in pokemon that aren't in inventory when seen in field
+// todo: save pokemon inventory to notepad after entire field is checked and pokemon were added or removed
 // todo: remove pokemon that get released, individually or by mass
 // todo: part two: remove pokemon that get traded also
+// auto remove function when seen in field
+// which means todo: keep track of fields
 // todo: compare ivs of pokemon
-// todo: display ivs on field tooltips or side context menu
-// todo: perfect iv display on other people's fields
+// todo: display ivs on side context menu
+// possible todo: perfect iv display on other people's fields
 // profit
 
 var $ = unsafeWindow.$;
 var inventory = [];
 var fileIDs = [];
 
-let button = $("<li data-name=\"IV Inventory\"><a title=\"Count Inventory\" style=\"cursor: pointer;\"><img src=\"https://pfq-static.com/img/navbar/dex.png\"> (...) Inventory </a></li>");
+let button = $("<li data-name=\"IV Inventory\"><a title=\"Count Inventory\" style=\"cursor: pointer;\">"
+	+ "<img src=\"https://pfq-static.com/img/navbar/dex.png\"> (...) Inventory </a></li>");
 $("#announcements > ul > li.spacer").eq(0).before(button);
+
+
+function updateInventoryCount() {
+	$(button).find("a").contents().filter(function() {
+		return (this.nodeType == 3);
+	}).replaceWith(" (" + (inventory.length ? inventory.length : "...") + ") Inventory");
+}
+
 
 function loadInventory() {
 	return new Promise((invResolve) => {
@@ -47,9 +58,7 @@ function loadInventory() {
 				if (inventoryFilePromiseList.length) {
 					console.log(inventoryFilePromiseList.length + " inventory file(s) found...");
 					inventoryFilePromiseList.slice(-1)[0].then(function() {
-						$(button).find("a").contents().filter(function() {
-							return (this.nodeType == 3);
-						}).replaceWith(" (" + inventory.length + ") Inventory");
+						updateInventoryCount();
 						console.log(inventory);
 						invResolve("inventory built");
 					});
@@ -59,8 +68,8 @@ function loadInventory() {
 						unsafeWindow.ajax("fields/fieldlist", {
 							uid: 0
 						}).success((response) => {
-	//						let totalFields = 10; // testing code
-							let totalFields = response.fields.length;
+							let totalFields = 4; // testing code
+//							let totalFields = response.fields.length;
 							let pkmnListPromiseList = [];
 							for (let fieldID = 0; fieldID < totalFields; fieldID++) {
 								pkmnListPromiseList.push(new Promise((resolve, reject) => {
@@ -73,7 +82,8 @@ function loadInventory() {
 											let pokemon = {};
 											pokemon["id"] = $(this).find("h3").eq(0).find("a").attr("href").slice(-5);
 											pokemon["name"] = $(this).find("h3").eq(0).text();
-											pokemon["species"] = $(this).find(".icons").parent().text().substring(10, $(this).find(".icons").parent().text().length - 1);
+											pokemon["species"] = $(this).find(".icons").parent().text()
+												.substring(10, $(this).find(".icons").parent().text().length - 1);
 
 											let pokemonAttributes = [];
 											$(this).find(".icons").children().each(function() {
@@ -81,11 +91,14 @@ function loadInventory() {
 											});
 
 											pokemon["gender"] = pokemonAttributes.shift();
-											pokemon["form"] = $(this).find(".forme").length != 0 ? $(this).find(".forme").text().substring(7) : null;
+											pokemon["form"] = $(this)
+												.find(".forme").length ? $(this).find(".forme").text().substring(7) : null;
 											pokemon["attributes"] = pokemonAttributes;
-											pokemon["nature"] = $(this).find(".item").prev().clone().children().remove().end().text().substring(1);
+											pokemon["nature"] = $(this).find(".item").prev().clone().children().remove().end()
+												.text().substring(1);
 
-											let html_pokemonIVs = $(this).find("span[data-tooltip]").slice(0,6); // if not sliced 7-12 indexes are evs
+											// if not sliced, 7-12 indexes are EVs
+											let html_pokemonIVs = $(this).find("span[data-tooltip]").slice(0, 6);
 
 											let pokemonIVs = {};
 											pokemonIVs["health"] = parseInt($(html_pokemonIVs[0]).text());
@@ -155,10 +168,7 @@ function loadInventory() {
 									});
 								}
 
-								$(button).find("a").contents().filter(function() {
-									return (this.nodeType == 3);
-								}).replaceWith(" (" + inventory.length + ") Inventory");
-
+								updateInventoryCount();
 								console.log(inventory);
 								invResolve("inventory built");
 							});
@@ -213,74 +223,124 @@ var fieldPokemonIDs = {};
 async function fieldPokemonHandler() {
 	if (inventory.length) {
 		// wait for previous field to unload
-    // ideally this function would run after the pokefarm button's action is registered instead of this delay
-    await new Promise(r => setTimeout(r, 500));
-    // displays perfect iv count on pokemon in mass release list
-    waitForElm('#field_field > .menu > label[data-menu="release"]').then((elm) => {
-      elm.on("click", async () => {
-        await waitForElm(".bulkpokemonlist > ul > li > label > .icons").then((elm) => {
-          elm.each(function() {
-            $(this).after('<p style="margin-block-start: unset; margin-block-end: 1pt; text-align: center;">'
-              + fieldPokemonIDs[$(this).parent().find("input").val()] + ' Perfect IVs</p>');
-          });
-        });
-      });
-    });
+		// ideally this function would run after the pokefarm button's action is registered instead of this delay
+		await new Promise(r => setTimeout(r, 500));
+		// displays perfect iv count on pokemon in mass release list
+		waitForElm('#field_field > .menu > label[data-menu="release"]').then((elm) => {
+			elm.on("click", async () => {
+				await waitForElm(".bulkpokemonlist > ul > li > label > .icons").then((elm) => {
+					elm.each(function() {
+						$(this).after('<p style="margin-block-start: unset; margin-block-end: 1pt; text-align: center;">'
+							+ fieldPokemonIDs[$(this).parent().find("input").val()] + ' Perfect IVs</p>');
+					});
+				});
+			});
+		});
+
 		try {
 			await waitForElm("#field_field > div.field > .tooltip_content > .fieldmontip").then((fieldPokemonList) => {
 				fieldPokemonIDs = {};
-				fieldPokemonList.each(function() {
+				fieldPokemonList.each(async function() {
 					let fieldPokemonID = $(this).find("h3").eq(0).find("a").attr("href").slice(-5);
 					let invPokemon = inventory.find(pokemon => pokemon.id === fieldPokemonID);
 
-					if (invPokemon) {
-						let color = "white";
-						switch(invPokemon.perfect_ivs) {
-							case 0:
-								color = "red";
-								break;
-							case 1:
-								color = "violet";
-								break;
-							case 5:
-								color = "green";
-								break;
-							case 6:
-								color = "gold";
-						}
-						
-						$(this).parent().prev().children().eq(1).before(
-							'<p style="display: unset; position: absolute; bottom: 0px; right: 0px; margin: 0px; background: #000000;'
-								+ ' z-index: 1; color: ' + color + '";>' + invPokemon.perfect_ivs + '</p>');
-							// move out of if statement, should be added to this array in both cases
-							fieldPokemonIDs[fieldPokemonID] = invPokemon.perfect_ivs;
-					} else {
+					if (!invPokemon) {
 						console.log("pokemon with id " + fieldPokemonID + " was not found in inventory, adding...");
+						await new Promise((resolve, reject) => {
+							GM_xmlhttpRequest({
+								method: 'GET',
+								url: "https://pokefarm.com/summary/" + fieldPokemonID,
+								onload: (response) => {
+									resolve(response.responseText);
+								},
+								onerror: (error) => {
+									reject(error);
+								}
+							});
+						}).then((response, reject) => {
+							let pokemon = {};
+							pokemon["id"] = fieldPokemonID;
+							let pokemonAttributes = [];
+							$(response).find("#summary_col1 > div.party > div > div.name").children().each(function(index) {
+								index ? pokemonAttributes.push($(this).attr("title").substring(1, $(this).attr("title").length - 1))
+									: pokemonAttributes.push($(this).text());
+							});
+
+							pokemon["name"] = pokemonAttributes.shift();
+							pokemon["species"] = $(response).find("#pkmnspecdata > p:nth-child(1) > a").text();
+							pokemon["gender"] = pokemonAttributes.pop();
+							pokemon["form"] = $(response).find("#pkmnspecdata > p:nth-child(1) > span").length ?
+								$(response).find("#pkmnspecdata > p:nth-child(1) > span").text().substring(1,
+								$(response).find("#pkmnspecdata > p:nth-child(1) > span").text().length - 1) : null;
+							pokemon["attributes"] = pokemonAttributes;
+							pokemon["nature"] = $(response)
+								.find("#summary_col1 > div.party > div > div.extra > div.nature > b").text();
+
+							let html_pokemonIVs = $(response)
+								.find("#summary_col2 > div > div:nth-child(6) > table > tbody > tr:nth-child(2)")
+								 .children().slice(1);
+
+							let pokemonIVs = {};
+							pokemonIVs["health"] = parseInt($(html_pokemonIVs[0]).text());
+							pokemonIVs["attack"] = parseInt($(html_pokemonIVs[1]).text());
+							pokemonIVs["defense"] = parseInt($(html_pokemonIVs[2]).text());
+							pokemonIVs["special_attack"] = parseInt($(html_pokemonIVs[3]).text());
+							pokemonIVs["special_defense"] = parseInt($(html_pokemonIVs[4]).text());
+							pokemonIVs["speed"] = parseInt($(html_pokemonIVs[5]).text());
+							pokemon["iv_total"] = parseInt($(html_pokemonIVs[6]).text());
+
+							let pokemonPerfectIVs = 0;
+							for (let iv in pokemonIVs) {
+								if (pokemonIVs[iv] == 31) { ++pokemonPerfectIVs; }
+							}
+
+							pokemon["ivs"] = pokemonIVs;
+							pokemon["perfect_ivs"] = pokemonPerfectIVs;
+
+							invPokemon = pokemon;
+							inventory.push(pokemon);
+							updateInventoryCount();
+						});
 					}
+
+					let color = "white";
+					switch(invPokemon["perfect_ivs"]) {
+						case 0:
+							color = "red";
+							break;
+						case 1:
+							color = "violet";
+							break;
+						case 5:
+							color = "green";
+							break;
+						case 6:
+							color = "gold";
+					}
+
+					$(this).parent().prev().children().eq(1).before(
+						'<p style="display: unset; position: absolute; bottom: 0px; right: 0px; margin: 0px; background: #000000;'
+							+ ' z-index: 1; color: ' + color + '";>' + invPokemon["perfect_ivs"] + '</p>');
+					fieldPokemonIDs[fieldPokemonID] = invPokemon["perfect_ivs"];
 				});
 			});
-		} catch (error) {
-			// needs testing on empty field (i have none :( )
-			console.log("didn't find any pokemon");
-			console.log(error);
-		}
-
+		} catch (e) {}
 		return;
 	}
-
 	return;
 }
 
+
 // adds click listeners to previous, next, and all field jump buttons
-$('button[data-action="jump"]').on("click", async () => {
-  await waitForElm("#fieldjumpnav > li > button").then((elm) => {
-    elm.each(function() {
-      $(this).on("click", fieldPokemonHandler);
-    });
-  });
+$('#field_nav > button:nth-child(1)').on("click", fieldPokemonHandler);
+$('#field_nav > button:nth-child(2)').on("click", fieldPokemonHandler);
+$('#field_nav > button:nth-child(3)').on("click", async () => {
+	await waitForElm("#fieldjumpnav > li > button").then((elm) => {
+		elm.each(function() {
+			$(this).on("click", fieldPokemonHandler);
+		});
+	});
 });
-$('button[data-action="previous"]').on("click", fieldPokemonHandler);
-$('button[data-action="next"]').on("click", fieldPokemonHandler);
 
 $(button).on("click", () => {
 	let popup = confirm("WARNING!\n\nThis will remove and rebuild your inventory files (the PokemonInventory.json files)"
@@ -308,9 +368,7 @@ $(button).on("click", () => {
 		}
 		fileIDs = [];
 		inventory = [];
-		$(button).find("a").contents().filter(function() {
-			return (this.nodeType == 3);
-		}).replaceWith(" (...) Inventory");
+		updateInventoryCount();
 		waitForInventory();
 	}
 });
