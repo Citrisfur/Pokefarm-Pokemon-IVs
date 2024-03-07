@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         Pokefarm Pokemon IVs
 // @namespace    http://tampermonkey.net/
-// @version      2024-02-16
+// @version      2024-03-7
 // @description  Display and catalogue IVs for a user's owned Pokemon in Pokefarm
 // @author       Nathan Coy
 // @match        https://pokefarm.com/fields
