@@ -104,7 +104,7 @@ function saveInventory(fieldIndex = -1) {
 
 async function loadInventory() {
   return new Promise(async (resolve) => {
-    let lastInventoryFilePromise;
+    let inventoryFilePromiseList = [];
     await new Promise((resolve, reject) => {
       unsafeWindow.ajax("farm/notepad", {
         "directory": null
@@ -114,7 +114,7 @@ async function loadInventory() {
             let fileID = $(this).data("file");
             fileIDs.push(fileID);
 
-            lastInventoryFilePromise = new Promise((resolve, reject) => {
+            inventoryFilePromiseList.push(new Promise((resolve, reject) => {
               unsafeWindow.ajax("farm/notepad", {
                 "directory": null,
                 "file": fileID
@@ -124,7 +124,7 @@ async function loadInventory() {
               }).failure(() => {
                 reject("ERROR: Could not load notepad inventory file ID " + fileID);
               });
-            });
+            }));
           }
         });
         resolve("Loading inventory from user's inventory files...");
@@ -133,16 +133,16 @@ async function loadInventory() {
       });
     });
 
-    if (lastInventoryFilePromise) {
+    if (inventoryFilePromiseList.length) {
       console.log(fileIDs.length + " inventory file(s) found...");
-      lastInventoryFilePromise.then(() => {
+      Promise.all(inventoryFilePromiseList).then(() => {
         updateInventoryCount();
-        resolve("Loaded inventory from user's notepad.");
         console.log(inventory);
+        resolve("Loaded inventory from user's notepad.");
       });
     } else {
       console.log("Inventory does not exist, creating...");
-      let lastPokemonListPromise;
+      let pokemonListPromiseList = [];
       await new Promise((resolve, reject) => {
         unsafeWindow.ajax("fields/fieldlist", {
           uid: 0
@@ -156,7 +156,7 @@ async function loadInventory() {
             field["name"] = resField.name;
             // in ajax request fieldid is index and not resField id because in the field list fieldid is the
             // position they display in and no longer their actual field ids
-            lastPokemonListPromise = new Promise((resolve, reject) => {
+            pokemonListPromiseList.push(new Promise((resolve, reject) => {
               unsafeWindow.ajax("fields/pkmnlist", {
                 "fieldid": index,
                 "tooltip": "train"
@@ -211,7 +211,7 @@ async function loadInventory() {
               }).failure(() => {
                 reject("ERROR: Could not read Pokemon Field " + index);
               });
-            });
+            }));
           };
           resolve("Retrieved user's field list...");
         }).failure(() => {
@@ -219,9 +219,10 @@ async function loadInventory() {
         });
       });
 
-      lastPokemonListPromise.then(async () => {
-        await saveInventory();
-        resolve("Built inventory from Pokefarm fields.");
+      Promise.all(pokemonListPromiseList).then(() => {
+        saveInventory().then(() => {
+          resolve("Built inventory from Pokefarm fields.");
+        });
       });
     }
   });
@@ -381,8 +382,8 @@ async function fieldHandler() {
 
       if (inventoryUpdated) {
         saveInventory(inventory.indexOf(invField));
-      });
-    }
+      };
+    });
   });
 
   // displays perfect iv count on pokemon in mass release list
