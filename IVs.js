@@ -1,16 +1,5 @@
 'use strict';
 
-// issue: renaming field breaks inventory search feature
-// so todo: change field name in inventory when renamed
-// todo: remove pokemon that get released, individually or by mass
-// todo: part two: remove pokemon that get traded also
-// auto remove function when seen in field
-// todo: compare ivs of pokemon
-// todo: display ivs on side context menu
-// possible todo: perfect iv display on other people's fields
-// profit
-// might have to relook at all used jquery selectors, changed method of grabbing them halfway through
-
 var $ = unsafeWindow.$;
 var inventory = [];
 var invButton = $("<li data-name=\"IV Inventory\"><a title=\"Count Inventory\" style=\"cursor: pointer;\">"
@@ -149,6 +138,7 @@ async function loadInventory() {
       lastInventoryFilePromise.then(() => {
         updateInventoryCount();
         resolve("Loaded inventory from user's notepad.");
+        console.log(inventory);
       });
     } else {
       console.log("Inventory does not exist, creating...");
@@ -157,9 +147,9 @@ async function loadInventory() {
         unsafeWindow.ajax("fields/fieldlist", {
           uid: 0
         }).success((response) => {
-//          totalFields = response.fields.length;
-          totalFields = 49; // testing line
-          response.fields = response.fields.slice(0, 49); // testing line
+          totalFields = response.fields.length;
+//          totalFields = 49; // testing line
+//          response.fields = response.fields.slice(0, 49); // testing line
           for (let [index, resField] of response.fields.entries()) {
             let field = {};
             field["id"] = resField.id;
@@ -221,8 +211,6 @@ async function loadInventory() {
               }).failure(() => {
                 reject("ERROR: Could not read Pokemon Field " + index);
               });
-            }).then((response) => { // debugging, possible todo: add debug mode toggle
-              console.log(response);
             });
           };
           resolve("Retrieved user's field list...");
@@ -263,6 +251,7 @@ function waitForElm(selector) {
   });
 }
 
+
 var fieldName;
 async function fieldHandler() {
   if (!fieldName) {
@@ -278,10 +267,9 @@ async function fieldHandler() {
   let fieldPokemonIDs = {};
   // test if try catch block is needed here for empty field
   waitForElm("#field_field > div.field > .tooltip_content > .fieldmontip").then((fieldPokemonList) => {
-    console.log(fieldName);
     fieldPokemonIDs = {};
     let inventoryUpdated = false;
-    let lastFieldPokemonPromise;
+    let fieldPokemonPromiseList = [];
     let invField = inventory.find(field => field.name === fieldName);
     if (!invField) {
       let field = {};
@@ -293,7 +281,7 @@ async function fieldHandler() {
     }
 
     fieldPokemonList.each(function() {
-      lastFieldPokemonPromise = new Promise(async (resolve, reject) => {
+      fieldPokemonPromiseList.push(new Promise(async (resolve, reject) => {
         let fieldPokemonID = $(this).find("h3").eq(0).find("a").attr("href").slice(-5);
         let invPokemon = invField.pokemon.find(pokemon => pokemon.id === fieldPokemonID);
         inventoryUpdated = inventoryUpdated || !invPokemon;
@@ -377,15 +365,24 @@ async function fieldHandler() {
             + ' z-index: 1; color: ' + color + '";>' + invPokemon["perfect_ivs"] + '</p>');
         fieldPokemonIDs[fieldPokemonID] = invPokemon["perfect_ivs"];
         resolve();
-      });
+      }));
     });
-    console.log(inventory.indexOf(invField));
-    if (inventoryUpdated) {
-      lastFieldPokemonPromise.then(() => {
+
+    Promise.all(fieldPokemonPromiseList).then(() => {
+      for (let invPokemon of invField.pokemon) {
+        if (!Object.keys(fieldPokemonIDs).includes(invPokemon.id)) {
+          console.log("pokemon with id " + invPokemon.id
+            + " was found in the inventory but not on the field, removing...");
+          inventory.find(field => field.name == invField.name).pokemon
+            .splice(invField.pokemon.indexOf(invField.pokemon.find(pokemon => pokemon.id === invPokemon.id)), 1);
+          inventoryUpdated = true;
+        }
+      }
+
+      if (inventoryUpdated) {
         saveInventory(inventory.indexOf(invField));
       });
     }
-    console.log(inventory);
   });
 
   // displays perfect iv count on pokemon in mass release list
