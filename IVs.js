@@ -368,17 +368,18 @@ async function fieldHandler() {
       }));
     });
 
-    for (let invPokemon of invField.pokemon) {
-      if (!Object.keys(fieldPokemonIDs).includes(invPokemon.id)) {
-        console.log("pokemon with id " + invPokemon.id + " was found in the inventory but not on the field, removing...");
-        inventory.find(field => field.name == invField.name).pokemon
-          .splice(invField.pokemon.indexOf(invField.pokemon.find(pokemon => pokemon.id === invPokemon.id)), 1);
-        inventoryUpdated = true;
+    Promise.all(fieldPokemonPromiseList).then(() => {
+      for (let invPokemon of invField.pokemon) {
+        if (!Object.keys(fieldPokemonIDs).includes(invPokemon.id)) {
+          console.log("pokemon with id " + invPokemon.id
+            + " was found in the inventory but not on the field, removing...");
+          inventory.find(field => field.name == invField.name).pokemon
+            .splice(invField.pokemon.indexOf(invField.pokemon.find(pokemon => pokemon.id === invPokemon.id)), 1);
+          inventoryUpdated = true;
+        }
       }
-    }
 
-    if (inventoryUpdated) {
-      Promise.all(fieldPokemonPromiseList).then(() => {
+      if (inventoryUpdated) {
         saveInventory(inventory.indexOf(invField));
       });
     }
