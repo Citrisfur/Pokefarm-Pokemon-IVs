@@ -1,7 +1,7 @@
 'use strict';
 
 var $ = unsafeWindow.$;
-var inventory = [];
+var inventory = {"fields": []};
 var invButton = $("<li data-name=\"IV Inventory\"><a title=\"Count Inventory\" style=\"cursor: pointer;\">"
   + "<img src=\"https://pfq-static.com/img/navbar/dex.png\"> (...) Inventory </a></li>");
 
@@ -10,7 +10,7 @@ $("#announcements > ul > li.spacer").eq(0).before(invButton);
 
 function updateInventoryCount() {
   let totalPokemon = 0;
-  for (let field of inventory) {
+  for (let field of inventory.fields) {
     totalPokemon += field.pokemon.length;
   }
 
@@ -44,7 +44,7 @@ function saveInventory(fieldIndex = -1) {
                 "mode": "save",
                 "save": {
                   "name": "PokemonInventory" + fileNumber + ".json",
-                  "content": JSON.stringify(inventory.slice(fileNumber * 50 - 50, fileNumber * 50))
+                  "content": JSON.stringify(inventory.fields.slice(fileNumber * 50 - 50, fileNumber * 50))
                 }
               }).success(() => {
                 resolve("Wrote inventory to PokemonInventory" + fileNumber + ".json");
@@ -85,7 +85,7 @@ function saveInventory(fieldIndex = -1) {
           "mode": "save",
           "save": {
             "name": "PokemonInventory" + (Math.floor(fieldIndex / 50) + 1) + ".json",
-            "content": JSON.stringify(inventory.slice(lowerFieldIndex, upperFieldIndex))
+            "content": JSON.stringify(inventory.fields.slice(lowerFieldIndex, upperFieldIndex))
           }
         }).success(() => {
           resolve("Wrote inventory to PokemonInventory" + (Math.floor(fieldIndex / 50) + 1) + ".json");
@@ -119,7 +119,7 @@ async function loadInventory() {
                 "directory": null,
                 "file": fileID
               }).success((response) => {
-                $.merge(inventory, JSON.parse($(response.html).find("textarea").text()));
+                $.merge(inventory.fields, JSON.parse($(response.html).find("textarea").text()));
                 resolve();
               }).failure(() => {
                 reject("ERROR: Could not load notepad inventory file ID " + fileID);
@@ -150,6 +150,7 @@ async function loadInventory() {
           totalFields = response.fields.length;
 //          totalFields = 49; // testing line
 //          response.fields = response.fields.slice(0, 49); // testing line
+          inventory = {"fields": []};
           for (let [index, resField] of response.fields.entries()) {
             let field = {};
             field["id"] = resField.id;
@@ -206,7 +207,7 @@ async function loadInventory() {
                   fieldPokemon.push(pokemon);
                 });
                 field["pokemon"] = fieldPokemon;
-                inventory.push(field);
+                inventory.fields.push(field);
                 resolve("Read Pokemon Field " + index + "/" + totalFields + "...");
               }).failure(() => {
                 reject("ERROR: Could not read Pokemon Field " + index);
@@ -229,7 +230,60 @@ async function loadInventory() {
 }
 
 
-function waitForElm(selector) {
+var evoTrees = []
+function getEvoTree(pokemonSpecies) {
+  return new Promise((resolve, reject) => {
+    if (evoTrees[pokemonSpecies]) {
+      resolve("Evo line for the " + pokemonSpecies + " species already generated.");
+    }
+
+    for (let pokemon of fieldSurvey) {
+      if (pokemon[1] == pokemonSpecies) {
+        unsafeWindow.ajax("dex/details", {
+          "id": pokemon[0]
+        }).success(async (response) => {
+          let evoTree = [];
+          if ($(response.html).find("div.evolutiontree").text().includes("is not known to evolve")) {
+            evoTree.push(pokemonSpecies);
+          } else {
+            $($(response.html).find("div.evolutiontree")).find("span.name").each(function () {
+              if (!$(this).children().last().text().includes("Mega")) {
+                evoTree.push($(this).children().last().text());
+              }
+            });
+          }
+
+          evoTrees[pokemonSpecies] = evoTree;
+          resolve("Generated evo line for the " + pokemonSpecies + " species.");
+        }).failure(() => {
+          reject("ERROR: Could not generate evo line for the " + pokemonSpecies + " species.")
+        });
+        break;
+      }
+    }
+  });
+}
+
+
+async function findInInventory(pokemonSpecies) {
+  return new Promise((resolve) => {
+    getEvoTree(pokemonSpecies).then(() => {
+      let matchedPokemon = [];
+      for (let evoSpecies of evoTrees[pokemonSpecies]) {
+        for (let field of inventory.fields) {
+          let matches = field.pokemon.filter(pokemon => pokemon.species == evoSpecies);
+          for (let match of matches) {
+            matchedPokemon.push(match);
+          }
+        }
+      }
+      resolve(matchedPokemon);
+    });
+  });
+}
+
+
+function waitForElm(selector, timeout = 2) {
   return new Promise((resolve, reject) => {
     if ($(selector).length) {
       return resolve($(selector));
@@ -248,12 +302,15 @@ function waitForElm(selector) {
     });
 
     // for empty fields, mostly
-    setTimeout(() => reject(null), 2000);
+    if (timeout) {
+      setTimeout(() => reject(null), timeout * 1000);
+    }
   });
 }
 
 
 var fieldName;
+var previousElm;
 async function fieldHandler() {
   if (!fieldName) {
     fieldName = $("#field_nav > button:nth-child(3)").text();
@@ -271,14 +328,14 @@ async function fieldHandler() {
     fieldPokemonIDs = {};
     let inventoryUpdated = false;
     let fieldPokemonPromiseList = [];
-    let invField = inventory.find(field => field.name === fieldName);
+    let invField = inventory.fields.find(field => field.name === fieldName);
     if (!invField) {
       let field = {};
       field["id"] = null;
       field["name"] = fieldName;
       field["pokemon"] = [];
       invField = field;
-      inventory.push(invField);
+      inventory.fields.push(invField);
     }
 
     fieldPokemonList.each(function() {
@@ -363,9 +420,10 @@ async function fieldHandler() {
 
         $(this).parent().prev().children().eq(1).before(
           '<p style="display: unset; position: absolute; bottom: 0px; right: 0px; margin: 0px; background: #000000;'
-            + ' z-index: 1; color: ' + color + '";>' + invPokemon["perfect_ivs"] + '</p>');
+            + ' z-index: 1; color: ' + color + ';">' + invPokemon["perfect_ivs"] + '</p>');
         fieldPokemonIDs[fieldPokemonID] = invPokemon["perfect_ivs"];
-        resolve();
+
+        resolve("Retrieved data of field Pokemon " + invPokemon["id"]);
       }));
     });
 
@@ -374,25 +432,86 @@ async function fieldHandler() {
         if (!Object.keys(fieldPokemonIDs).includes(invPokemon.id)) {
           console.log("pokemon with id " + invPokemon.id
             + " was found in the inventory but not on the field, removing...");
-          inventory.find(field => field.name == invField.name).pokemon
+          inventory.fields.find(field => field.name == invField.name).pokemon
             .splice(invField.pokemon.indexOf(invField.pokemon.find(pokemon => pokemon.id === invPokemon.id)), 1);
           inventoryUpdated = true;
         }
       }
 
       if (inventoryUpdated) {
-        saveInventory(inventory.indexOf(invField));
+        saveInventory(inventory.fields.indexOf(invField));
       };
-    });
-  });
 
-  // displays perfect iv count on pokemon in mass release list
-  waitForElm('#field_field > .menu > label[data-menu="release"]').then((elm) => {
-    elm.on("click", () => {
-      waitForElm(".bulkpokemonlist > ul > li > label > .icons").then((elm) => {
-        elm.each(function() {
-          $(this).after('<p style="margin-block-start: unset; margin-block-end: 1pt; text-align: center;">'
-            + fieldPokemonIDs[$(this).parent().find("input").val()] + ' Perfect IVs</p>');
+      waitForElm("span.fieldmon > img.big:not(.search)").then((fieldmons) => {
+        fieldmons.each((index, elm) => {
+          $(elm).addClass("search");
+          $(elm).on("click", () => {
+            if (previousElm) {
+              if (elm == previousElm) {
+                return;
+              }
+            }
+
+            previousElm = elm;
+            let fieldPokemonSpecies = $(elm).parent().next().find(".icons").parent().text()
+             .substring(10, $(elm).parent().next().find(".icons").parent().text().length - 1);
+            console.log("Searching for " + fieldPokemonSpecies + "...");
+            findInInventory(fieldPokemonSpecies).then((result) => {
+              console.log(result);
+              for (let pokemon of result) {
+                console.log(pokemon.id + ": " + pokemon.species + " [" + pokemon.gender + "] " + pokemon.perfect_ivs);
+              }
+            });
+          });
+        });
+      });
+
+      // displays perfect iv count on pokemon in mass release list
+      waitForElm('#field_field > .menu > label[data-menu="release"]').then((elm) => {
+        elm.on("click", () => {
+          waitForElm(".bulkpokemonlist > ul > li > label > .icons").then((elm) => {
+            elm.each(function() {
+              let color = "white";
+              switch(fieldPokemonIDs[$(this).parent().find("input").val()]) {
+                case 0:
+                  color = "red";
+                  break;
+                case 1:
+                  color = "violet";
+                  break;
+                case 5:
+                  color = "green";
+                  break;
+                case 6:
+                  color = "gold";
+              }
+
+              $(this).after('<p style="margin-block-start: unset; margin-block-end: 1pt; text-align: center; color: '
+                + color + ';">' + fieldPokemonIDs[$(this).parent().find("input").val()] + ' Perfect IVs</p>');
+            });
+          });
+        });
+      });
+      waitForElm('#field_field > .menu > label[data-menu="research"]', 0).then((elm) => {
+        elm.on("click", () => {
+          waitForElm("#fieldjumpnav > li > button").then((elm) => {
+            elm.each(function() {
+              $(this).on("click", fieldHandler);
+            });
+          });
+        });
+      });
+      waitForElm('#field_field > .menu > label[data-menu="search"]', 0).then((elm) => {
+        elm.on("click", () => {
+          waitForElm("#searchfieldsbox > form > p:nth-child(3) > input[type=submit]", 0).then((elm) => {
+            elm.on("click", () => {
+              waitForElm("#fieldjumpnav > li > button").then((elm) => {
+                elm.each(function() {
+                  $(this).on("click", fieldHandler);
+                });
+              });
+            });
+          });
         });
       });
     });
@@ -401,8 +520,36 @@ async function fieldHandler() {
 }
 
 
-loadInventory().then((result) => {
+/*waitForElm("#field_field > div.field").then(() => {
+  let flexDiv = $('<div style="display: flex;"></div>');
+  let consoleDiv = $('<div><p>Console</p></div>');
+  let pokefarmField = $("#field_field");
+  let pokemonInfoDiv = $('<div><p>Pokemon Info</p></div>');
+  const backgroundCSS = $("#field_field").css("background");
+  const borderCSS = $("#field_field").css("border");
+
+  $(flexDiv).insertBefore("#field_field");
+  $("#field_field").remove();
+
+  consoleDiv.css("flex", "1 1 0px").css("background", backgroundCSS).css("border", borderCSS).css("margin", "16px").css("padding", "0 18px");
+  pokefarmField.css("flex", "0 0 600px");
+  pokemonInfoDiv.css("flex", "1 1 0px").css("background", backgroundCSS).css("border", borderCSS).css("margin", "16px").css("padding", "0 18px");
+  flexDiv.append(consoleDiv);
+  flexDiv.append(pokefarmField);
+  flexDiv.append(pokemonInfoDiv);
+})*/
+
+var fieldSurvey;
+loadInventory().then(async (result) => {
   console.log(result);
+  await new Promise((resolve) => {
+    unsafeWindow.ajax("fields/survey", {}).success((response) => {
+      resolve(response.survey);
+    });
+  }).then((result) => {
+    fieldSurvey = result;
+  });
+
   fieldHandler();
   // adds click listeners to previous, next, and all field jump buttons
   $('#field_nav > button:nth-child(1)').on("click", fieldHandler);
@@ -440,7 +587,7 @@ loadInventory().then((result) => {
         });
       }
       fileIDs = [];
-      inventory = [];
+      inventory = {"fields": []};
       updateInventoryCount();
       loadInventory();
     }
