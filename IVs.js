@@ -1,11 +1,37 @@
 'use strict';
 
 var $ = unsafeWindow.$;
+var username = $("#globaluserlink").text();
 var inventory = {"fields": []};
 var invButton = $("<li data-name=\"IV Inventory\"><a title=\"Count Inventory\" style=\"cursor: pointer;\">"
   + "<img src=\"https://pfq-static.com/img/navbar/dex.png\"> (...) Inventory </a></li>");
 
 $("#announcements > ul > li.spacer").eq(0).before(invButton);
+
+/*var consoleDiv = $('<div><b>Console</b></div>');
+var consoleLog = $("<p></p>");
+var pokemonInfoDiv = $('<div><p>Pokemon Info</p></div>');
+waitForElm("#field_field > .menu").then(() => {
+  waitForElm("#announcements > ul > li[data-name='QoL']").finally(() => {
+    waitForElm("#field_field > div.field").then(() => {
+      let flexDiv = $('<div style="display: flex;"></div>');
+      let pokefarmField = $("#field_field");
+      const backgroundCSS = $("#field_field").css("background");
+      const borderCSS = $("#field_field").css("border");
+
+      $(flexDiv).insertBefore("#field_field");
+      $("#field_field").remove();
+
+      consoleDiv.css("flex", "1 1 0px").css("background", backgroundCSS).css("border", borderCSS).css("margin", "16px").css("padding", "4px 18px");
+      consoleDiv.children().after(consoleLog);
+      pokefarmField.css("flex", "0 1 600px");
+      pokemonInfoDiv.css("flex", "1 1 0px").css("background", backgroundCSS).css("border", borderCSS).css("margin", "16px").css("padding", "0 18px");
+      flexDiv.append(consoleDiv);
+      flexDiv.append(pokefarmField);
+      flexDiv.append(pokemonInfoDiv);
+    });
+  });
+});*/
 
 
 function updateInventoryCount() {
@@ -23,9 +49,9 @@ function updateInventoryCount() {
 var fileIDs = [];
 var totalFields = 1
 function saveInventory(fieldIndex = -1) {
-  console.log("Saving inventory to user's notepad...");
   return new Promise(async (resolve) => {
     // save full inventory
+    // todo: have this also work if files already exist, just write over them
     if (fieldIndex == -1) {
       for (let fileNumber = 1; fileNumber <= Math.ceil(totalFields / 50); fileNumber++) {
         new Promise((resolve, reject) => {
@@ -47,6 +73,7 @@ function saveInventory(fieldIndex = -1) {
                   "content": JSON.stringify(inventory.fields.slice(fileNumber * 50 - 50, fileNumber * 50))
                 }
               }).success(() => {
+                console.log("Wrote inventory to PokemonInventory" + fileNumber + ".json");
                 resolve("Wrote inventory to PokemonInventory" + fileNumber + ".json");
               }).failure(() => {
                 reject("ERROR: Could not write to file PokemonInventory" + fileNumber + ".json");
@@ -203,11 +230,13 @@ async function loadInventory() {
                   pokemon["ivs"] = pokemonIVs;
                   pokemon["iv_total"] = pokemonIVTotal;
                   pokemon["perfect_ivs"] = pokemonPerfectIVs;
+                  pokemon["OT"] = null; // not available on tooltip
 
                   fieldPokemon.push(pokemon);
                 });
                 field["pokemon"] = fieldPokemon;
                 inventory.fields.push(field);
+                console.log("Read Pokemon Field " + index + "/" + totalFields + "...");
                 resolve("Read Pokemon Field " + index + "/" + totalFields + "...");
               }).failure(() => {
                 reject("ERROR: Could not read Pokemon Field " + index);
@@ -237,43 +266,47 @@ function getEvoTree(pokemonSpecies) {
       resolve("Evo line for the " + pokemonSpecies + " species already generated.");
     }
 
-    for (let pokemon of fieldSurvey) {
-      if (pokemon[1] == pokemonSpecies) {
-        unsafeWindow.ajax("dex/details", {
-          "id": pokemon[0]
-        }).success(async (response) => {
-          let evoTree = [];
-          if ($(response.html).find("div.evolutiontree").text().includes("is not known to evolve")) {
-            evoTree.push(pokemonSpecies);
-          } else {
-            $($(response.html).find("div.evolutiontree")).find("span.name").each(function () {
-              if (!$(this).children().last().text().includes("Mega")) {
-                evoTree.push($(this).children().last().text());
-              }
-            });
+    let evoTree = [];
+    unsafeWindow.ajax("dex/details", {
+      "id": fieldSurvey.find(pokemon => pokemon[1] == pokemonSpecies)[0]
+    }).success((response) => {
+      if ($(response.html).find("div.evolutiontree").text().includes("is not known to evolve")) {
+        evoTree.push(pokemonSpecies);
+      } else {
+        $($(response.html).find("div.evolutiontree")).find("span.name").each(function () {
+          // if (!$(this).text().includes("Mega") && !$(this).text().includes("Totem")) { // might want this later
+          if (!evoTree.includes($(this).text())) {
+            evoTree.push($(this).text());
           }
-
-          evoTrees[pokemonSpecies] = evoTree;
-          resolve("Generated evo line for the " + pokemonSpecies + " species.");
-        }).failure(() => {
-          reject("ERROR: Could not generate evo line for the " + pokemonSpecies + " species.")
         });
-        break;
       }
-    }
+
+      evoTrees[pokemonSpecies] = evoTree;
+      resolve("Generated evo line for the " + pokemonSpecies + " species.");
+    }).failure(() => {
+      reject("ERROR: Could not generate evo line for the " + pokemonSpecies + " species.")
+    });
   });
 }
 
 
-async function findInInventory(pokemonSpecies) {
+async function searchInventory(pokemonSpecies) {
   return new Promise((resolve) => {
     getEvoTree(pokemonSpecies).then(() => {
       let matchedPokemon = [];
       for (let evoSpecies of evoTrees[pokemonSpecies]) {
+        let evoForm;
+        if (evoSpecies.indexOf("[") != -1) {
+          evoForm = evoSpecies.substring(evoSpecies.indexOf("[") + 1, evoSpecies.length - 1);
+          evoSpecies = evoSpecies.substring(0, evoSpecies.indexOf("[") - 1);
+        }
+
         for (let field of inventory.fields) {
-          let matches = field.pokemon.filter(pokemon => pokemon.species == evoSpecies);
+          let matches = field.pokemon.filter(pokemon => pokemon.species == evoSpecies)
+           .filter(pokemon => pokemon.form == evoForm);
+
           for (let match of matches) {
-            matchedPokemon.push(match);
+            matchedPokemon.push([field.name, match]);
           }
         }
       }
@@ -310,35 +343,34 @@ function waitForElm(selector, timeout = 2) {
 
 
 var fieldName;
-var previousElm;
 async function fieldHandler() {
+  let previousElm = null;
   if (!fieldName) {
     fieldName = $("#field_nav > button:nth-child(3)").text();
   } else {
-    await waitForElm("#field_nav > button:nth-child(3):disabled").then(() => {
-      waitForElm("#field_nav > button:nth-child(3):not([disabled])").then((fieldNameButton) => {
+    await waitForElm("#field_nav > button:nth-child(3):disabled").then(async () => {
+      await waitForElm("#field_nav > button:nth-child(3):not([disabled])").then((fieldNameButton) => {
         fieldName = fieldNameButton.text();
       });
     });
   }
 
-  let fieldPokemonIDs = {};
-  // test if try catch block is needed here for empty field
-  waitForElm("#field_field > div.field > .tooltip_content > .fieldmontip").then((fieldPokemonList) => {
-    fieldPokemonIDs = {};
-    let inventoryUpdated = false;
-    let fieldPokemonPromiseList = [];
-    let invField = inventory.fields.find(field => field.name === fieldName);
-    if (!invField) {
-      let field = {};
-      field["id"] = null;
-      field["name"] = fieldName;
-      field["pokemon"] = [];
-      invField = field;
-      inventory.fields.push(invField);
-    }
+  let invField = inventory.fields.find(field => field.name === fieldName);
+  if (!invField) {
+    let field = {};
+    field["id"] = null;
+    field["name"] = fieldName;
+    field["pokemon"] = [];
+    invField = field;
+    inventory.fields.push(invField);
+  }
 
-    fieldPokemonList.each(function() {
+  let fieldPokemonIDs = {};
+  let fieldPokemonPromiseList = [];
+  let inventoryUpdated = false;
+  waitForElm("div.menu").then(() => {
+    fieldPokemonIDs = {};
+    $("#field_field > div.field > .tooltip_content > .fieldmontip").each(function() {;
       fieldPokemonPromiseList.push(new Promise(async (resolve, reject) => {
         let fieldPokemonID = $(this).find("h3").eq(0).find("a").attr("href").slice(-5);
         let invPokemon = invField.pokemon.find(pokemon => pokemon.id === fieldPokemonID);
@@ -397,6 +429,24 @@ async function fieldHandler() {
             pokemon["ivs"] = pokemonIVs;
             pokemon["perfect_ivs"] = pokemonPerfectIVs;
 
+            $(response).find("div.tlitem").each(function() {
+              let tlEntry = $(this).text();
+              if (tlEntry.includes("Adopted from the Shelter by")) {
+                pokemon["OT"] = tlEntry.substring(28);
+                return false;
+              } else if (tlEntry.includes("Egg hatched by")) {
+                pokemon["OT"] = tlEntry.substring(15);
+                return false;
+              } else if (tlEntry.includes("Traded with") && !tlEntry.includes("SYSTEM")) {
+                pokemon["OT"] = $(this).find("a").text();
+              }
+            });
+
+            if (!pokemon["OT"]) {
+              console.log("Couldn't find OT, assuming player is");
+              pokemon["OT"] = username;
+            }
+
             invPokemon = pokemon;
             invField.pokemon.push(pokemon);
             updateInventoryCount();
@@ -426,14 +476,228 @@ async function fieldHandler() {
         resolve("Retrieved data of field Pokemon " + invPokemon["id"]);
       }));
     });
+    $("span.fieldmon > img.big").each((index, elm) => {
+      $(elm).on("click", () => {
+        //pokemonInfoDiv[0].innerHTML = $(elm).parent().next().children()[0].innerHTML;
+        let fieldPokemonSpecies = $(elm).parent().next().find(".icons").parent().text().substring(10, $(elm).parent().next().find(".icons").parent().text().length - 1) + ($(elm).parent().next().find(".forme").length ? " [" + $(elm).parent().next().find(".forme").text().substring(7) + "]" : "");
 
+        if (previousElm) {
+          // ok find a way to slim this down good arceus
+          // checks if the evo tree of this pokemon and the last pokemon are the same
+          // this way it will not research until the user clicks on a new evo line
+          // also does not work for different species on same evo line until species is clicked on for first time
+          if (JSON.stringify(evoTrees[fieldPokemonSpecies]) == JSON.stringify(evoTrees[$(previousElm).parent().next().find(".icons").parent().text().substring(10, $(previousElm).parent().next().find(".icons").parent().text().length - 1) + ($(previousElm).parent().next().find(".forme").length ? " [" + $(previousElm).parent().next().find(".forme").text().substring(7) + "]" : "")])) {
+            return;
+          }
+        }
+
+        previousElm = elm;
+        searchInventory(fieldPokemonSpecies).then(async (result) => {
+          let surveyTotal = 0;
+          for (let evoSpecies of evoTrees[fieldPokemonSpecies]) {
+            let surveySpecies = fieldSurvey.find(pokemon => pokemon[1] == evoSpecies);
+            if (surveySpecies) {
+              surveyTotal += parseInt(surveySpecies[2]);
+            }
+          }
+
+           console.log("Pokefarm reports " + surveyTotal + " Pokemon in the " + fieldPokemonSpecies + " evo line; I know of " + result.length + ":");
+          //consoleLog.text("Pokefarm reports " + surveyTotal + " Pokemon in the " + fieldPokemonSpecies + " evo line; I know of " + result.length + ":\n" + consoleLog.text());
+
+          // test for both genders [male, female], if genderless first is used
+          let highestPerfectIVs = [[], []];
+          for (let [field, pokemon] of result) {
+            if (!highestPerfectIVs[pokemon.gender == "F" ? 1 : 0].length || pokemon.perfect_ivs > highestPerfectIVs[pokemon.gender == "F" ? 1 : 0][0].perfect_ivs) {
+              highestPerfectIVs[pokemon.gender == "F" ? 1 : 0] = [];
+              highestPerfectIVs[pokemon.gender == "F" ? 1 : 0].push(pokemon);
+            } else if (pokemon.perfect_ivs == highestPerfectIVs[pokemon.gender == "F" ? 1 : 0][0].perfect_ivs) {
+              highestPerfectIVs[pokemon.gender == "F" ? 1 : 0].push(pokemon);
+            }
+          }
+
+          let pokemonOTPromiseList = [];
+          if (highestPerfectIVs[0].length != 1) {
+            for (let tiePokemon of highestPerfectIVs[0]) {
+              if (!tiePokemon.OT) {
+                pokemonOTPromiseList.push(new Promise((resolve, reject) => {
+                  GM_xmlhttpRequest({
+                    method: 'GET',
+                    url: "https://pokefarm.com/summary/" + tiePokemon.id,
+                    onload: (response) => {
+                      $(response.responseText).find("div.tlitem").each(function() {
+                        let tlEntry = $(this).text();
+                        if (tlEntry.includes("Adopted from the Shelter by")) {
+                          tiePokemon["OT"] = tlEntry.substring(28);
+                          return false;
+                        } else if (tlEntry.includes("Egg hatched by")) {
+                          tiePokemon["OT"] = tlEntry.substring(15);
+                          return false;
+                        } else if (tlEntry.includes("Traded with") && !tlEntry.includes("SYSTEM")) {
+                          tiePokemon["OT"] = $(this).find("a").text();
+                        }
+                      });
+
+                      if (!tiePokemon["OT"]) {
+                        tiePokemon["OT"] = username;
+                      }
+
+                      resolve();
+                    },
+                    onerror: (error) => {
+                      reject(error);
+                    }
+                  });
+                }));
+              }
+            }
+          }
+
+          if (highestPerfectIVs[1].length != 1) {
+            for (let tiePokemon of highestPerfectIVs[1]) {
+              if (!tiePokemon.OT) {
+                pokemonOTPromiseList.push(new Promise((resolve, reject) => {
+                  GM_xmlhttpRequest({
+                    method: 'GET',
+                    url: "https://pokefarm.com/summary/" + tiePokemon.id,
+                    onload: (response) => {
+                      $(response.responseText).find("div.tlitem").each(function() {
+                        let tlEntry = $(this).text();
+                        if (tlEntry.includes("Adopted from the Shelter by")) {
+                          tiePokemon["OT"] = tlEntry.substring(28);
+                          return false;
+                        } else if (tlEntry.includes("Egg hatched by")) {
+                          tiePokemon["OT"] = tlEntry.substring(15);
+                          return false;
+                        } else if (tlEntry.includes("Traded with") && !tlEntry.includes("SYSTEM")) {
+                          tiePokemon["OT"] = $(this).find("a").text();
+                        }
+                      });
+
+                      if (!tiePokemon["OT"]) {
+                        tiePokemon["OT"] = username;
+                      }
+                      resolve();
+                    },
+                    onerror: (error) => {
+                      reject(error);
+                    }
+                  });
+                }));
+              }
+            }
+          }
+
+          Promise.all(pokemonOTPromiseList).then(() => {
+            let diffOTPokemon = [[], []];
+            if (highestPerfectIVs[0].length != 1) {
+              for (let tiePokemon of highestPerfectIVs[0]) {
+                if (tiePokemon.OT != username) {
+                  diffOTPokemon[0].push(tiePokemon);
+                }
+              }
+            }
+
+            if (highestPerfectIVs[1].length != 1) {
+              for (let tiePokemon of highestPerfectIVs[1]) {
+                if (tiePokemon.OT != username) {
+                  diffOTPokemon[1].push(tiePokemon);
+                }
+              }
+            }
+
+            let highestIVTotal = [0, 0];
+            if (diffOTPokemon[0].length != 1) {
+              if (!diffOTPokemon[0].length) {
+                diffOTPokemon[0] = highestPerfectIVs[0];
+              }
+
+              for (let tiePokemon of diffOTPokemon[0]) {
+                if (!highestIVTotal[0] || tiePokemon.iv_total > highestIVTotal[0]) {
+                  highestIVTotal[0] = tiePokemon.iv_total;
+                }
+              }
+            }
+
+            if (diffOTPokemon[1].length != 1) {
+              for (let tiePokemon of diffOTPokemon[1]) {
+                if (!diffOTPokemon[0].length) {
+                  diffOTPokemon[0] = highestPerfectIVs[0];
+                }
+
+                if (!highestIVTotal[1] || tiePokemon.iv_total > highestIVTotal[1]) {
+                  highestIVTotal[1] = tiePokemon.iv_total;
+                }
+              }
+            }
+
+            for (let [field, pokemon] of result) {
+              let release = "✅";
+              if (pokemon.attributes.length || pokemon.perfect_ivs == 6) {
+                release = "❌";
+                console.log("Special or 6IV");
+              } else if (highestPerfectIVs[pokemon.gender == "F" ? 1 : 0].find(tiePokemon => tiePokemon.id == pokemon.id)) {
+                if (highestPerfectIVs[pokemon.gender == "F" ? 1 : 0].length == 1) {
+                  release = "❌";
+                  console.log("Only highest IV");
+                } else {
+                  if (diffOTPokemon[pokemon.gender == "F" ? 1 : 0].find(diffOTPkm => diffOTPkm.id = pokemon.id)) {
+                    if (diffOTPokemon[pokemon.gender == "F" ? 1 : 0].length == 1) {
+                      release = "❌";
+                      console.log("Only different OT");
+                    } else {
+                      if (pokemon.iv_total == highestIVTotal[pokemon.gender == "F" ? 1 : 0]) {
+                        release = "❌";
+                        console.log("Highest IV total");
+                      }
+                    }
+                  }
+                }
+              }
+
+              console.log(field
+               + (pokemon.attributes.length ? "/" + pokemon.attributes[0] : "")
+               + ": " + pokemon.species
+               + (pokemon.form ? " [" + pokemon.form + "]" : "") + " [" + pokemon.gender + "] "
+               + (pokemon.ivs.health == 31 ? pokemon.ivs.health : "**")  + "/"
+               + (pokemon.ivs.attack == 31 ? pokemon.ivs.attack : "**")  + "/"
+               + (pokemon.ivs.defense == 31 ? pokemon.ivs.defense : "**")  + "/"
+               + (pokemon.ivs.special_attack == 31 ? pokemon.ivs.special_attack : "**")  + "/"
+               + (pokemon.ivs.special_defense == 31 ? pokemon.ivs.special_defense : "**")  + "/"
+               + (pokemon.ivs.speed == 31 ? pokemon.ivs.speed : "**")  + " "
+               + pokemon.perfect_ivs + " = " + pokemon.iv_total + " " + release
+               + (pokemon.OT ? " " + pokemon.OT : ""));
+
+
+              if (pokemonOTPromiseList.length) { // if OTs were updated
+                let newOTPokemon = highestPerfectIVs[0].find(diffOTPkm => diffOTPkm.id = pokemon.id);
+                if (newOTPokemon) {
+                  inventory.fields.find(invField => invField.name == field).pokemon.find(invPokemon => invPokemon.id == pokemon.id).OT = newOTPokemon.OT;
+                }
+
+                newOTPokemon = highestPerfectIVs[1].find(diffOTPkm => diffOTPkm.id = pokemon.id);
+                if (newOTPokemon) {
+                  inventory.fields.find(invField => invField.name == field).pokemon.find(invPokemon => invPokemon.id == pokemon.id).OT = newOTPokemon.OT;
+                }
+
+                inventoryUpdated = true;
+              }
+            }
+
+            if (inventoryUpdated) {
+              //saveInventory();
+            }
+          });
+        });
+      });
+    });
+  }).finally((e) => {
     Promise.all(fieldPokemonPromiseList).then(() => {
-      for (let invPokemon of invField.pokemon) {
-        if (!Object.keys(fieldPokemonIDs).includes(invPokemon.id)) {
-          console.log("pokemon with id " + invPokemon.id
-            + " was found in the inventory but not on the field, removing...");
+      for (var i = invField.pokemon.length - 1; i >= 0; i--) {
+        if (!Object.keys(fieldPokemonIDs).includes(invField.pokemon[i].id)) {
+          console.log("pokemon with id " + invField.pokemon[i].id
+           + " was found in the inventory but not on the field, removing...");
           inventory.fields.find(field => field.name == invField.name).pokemon
-            .splice(invField.pokemon.indexOf(invField.pokemon.find(pokemon => pokemon.id === invPokemon.id)), 1);
+           .splice(invField.pokemon.indexOf(invField.pokemon.find(pokemon => pokemon.id === invField.pokemon[i].id)), 1);
           inventoryUpdated = true;
         }
       }
@@ -441,30 +705,6 @@ async function fieldHandler() {
       if (inventoryUpdated) {
         saveInventory(inventory.fields.indexOf(invField));
       };
-
-      waitForElm("span.fieldmon > img.big:not(.search)").then((fieldmons) => {
-        fieldmons.each((index, elm) => {
-          $(elm).addClass("search");
-          $(elm).on("click", () => {
-            if (previousElm) {
-              if (elm == previousElm) {
-                return;
-              }
-            }
-
-            previousElm = elm;
-            let fieldPokemonSpecies = $(elm).parent().next().find(".icons").parent().text()
-             .substring(10, $(elm).parent().next().find(".icons").parent().text().length - 1);
-            console.log("Searching for " + fieldPokemonSpecies + "...");
-            findInInventory(fieldPokemonSpecies).then((result) => {
-              console.log(result);
-              for (let pokemon of result) {
-                console.log(pokemon.id + ": " + pokemon.species + " [" + pokemon.gender + "] " + pokemon.perfect_ivs);
-              }
-            });
-          });
-        });
-      });
 
       // displays perfect iv count on pokemon in mass release list
       waitForElm('#field_field > .menu > label[data-menu="release"]').then((elm) => {
@@ -509,35 +749,15 @@ async function fieldHandler() {
                 elm.each(function() {
                   $(this).on("click", fieldHandler);
                 });
-              });
+              }).catch(() => {});
             });
           });
         });
       });
     });
   });
-  return;
 }
 
-
-/*waitForElm("#field_field > div.field").then(() => {
-  let flexDiv = $('<div style="display: flex;"></div>');
-  let consoleDiv = $('<div><p>Console</p></div>');
-  let pokefarmField = $("#field_field");
-  let pokemonInfoDiv = $('<div><p>Pokemon Info</p></div>');
-  const backgroundCSS = $("#field_field").css("background");
-  const borderCSS = $("#field_field").css("border");
-
-  $(flexDiv).insertBefore("#field_field");
-  $("#field_field").remove();
-
-  consoleDiv.css("flex", "1 1 0px").css("background", backgroundCSS).css("border", borderCSS).css("margin", "16px").css("padding", "0 18px");
-  pokefarmField.css("flex", "0 0 600px");
-  pokemonInfoDiv.css("flex", "1 1 0px").css("background", backgroundCSS).css("border", borderCSS).css("margin", "16px").css("padding", "0 18px");
-  flexDiv.append(consoleDiv);
-  flexDiv.append(pokefarmField);
-  flexDiv.append(pokemonInfoDiv);
-})*/
 
 var fieldSurvey;
 loadInventory().then(async (result) => {
