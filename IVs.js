@@ -455,11 +455,10 @@ async function fieldHandler() {
 
         fieldPokemonPromiseList.push(new Promise(async (resolve, reject) => {
           const fieldPokemonID = $(fieldmontips[i]).find("h3").eq(0).find("a").attr("href").slice(-5);
-          let pokemon = field.pokemon.find(pokemon => pokemon.id === fieldPokemonID);
-
           const fieldPokemonName = $(fieldmontips[i]).find("h3").eq(0).text();
           const fieldPokemonSpecies = $(fieldmontips[i]).find(".icons").parent().text().substring(10, $(fieldmontips[i]).find(".icons").parent().text().length - 1);
           const fieldPokemonForm = $(fieldmontips[i]).find(".forme").length ? $(fieldmontips[i]).find(".forme").text().substring(7) : null;
+          let pokemon = field.pokemon.find(pokemon => pokemon.id === fieldPokemonID);
           if (pokemon) {
             if (pokemon.name != fieldPokemonName) {
               pokemon.name = fieldPokemonName;
