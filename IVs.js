@@ -598,27 +598,15 @@ async function fieldHandler() {
         saveInventory(inventory.fields.indexOf(field));
       };
 
-      // displays perfect iv count on pokemon in mass release list
-      waitForElm('#field_field > .menu > label[data-menu="release"]').then((elm) => {
+      waitForElm('#field_field > .menu > label[data-menu="rename"]', 0).then((elm) => {
         elm.on("click", () => {
-          waitForElm(".bulkpokemonlist > ul > li > label > .icons").then((elm) => {
-            elm.each(function() {
-              let color = "white";
-              switch (fieldPokemonIDs[$(this).parent().find("input").val()]) {
-                case 0:
-                  color = "red";
-                  break;
-                case 1:
-                  color = "violet";
-                  break;
-                case 5:
-                  color = "green";
-                  break;
-                case 6:
-                  color = "gold";
-              }
-
-              $(this).after(`<p style="margin-block-start: unset; margin-block-end: 1pt; text-align: center; color: ${color};">${fieldPokemonIDs[$(this).parent().find("input").val()]} Perfect IVs</p>`);
+          waitForElm("body > div.dialog", 0).then((elm) => {
+            const oldFieldName = elm.find("#renametextbox").val();
+            elm.find("button").eq(0).on("click", () => {
+              const newFieldName = elm.find("#renametextbox").val();
+              inventory.fields.find(invField => invField.name === oldFieldName).name = newFieldName;
+              log(`Field ${oldFieldName} renamed to ${newFieldName}.`);
+              saveInventory(inventory.fields.indexOf(field));
             });
           });
         });
@@ -643,6 +631,31 @@ async function fieldHandler() {
                   $(this).on("click", fieldHandler);
                 });
               }).catch(() => {});
+            });
+          });
+        });
+      });
+
+      waitForElm('#field_field > .menu > label[data-menu="release"]', 0).then((elm) => {
+        elm.on("click", () => {
+          waitForElm(".bulkpokemonlist > ul > li > label > .icons").then((elm) => {
+            elm.each(function() {
+              let color = "white";
+              switch (fieldPokemonIDs[$(this).parent().find("input").val()]) {
+                case 0:
+                  color = "red";
+                  break;
+                case 1:
+                  color = "violet";
+                  break;
+                case 5:
+                  color = "green";
+                  break;
+                case 6:
+                  color = "gold";
+              }
+
+              $(this).after(`<p style="margin-block-start: unset; margin-block-end: 1pt; text-align: center; color: ${color};">${fieldPokemonIDs[$(this).parent().find("input").val()]} Perfect IVs</p>`);
             });
           });
         });
