@@ -1,6 +1,6 @@
 
 // ==UserScript==
-// @name         PokeFarm Pokemon IVs
+// @name         PokeFarm Pokemon IVs v0.0.3
 // @namespace    http://tampermonkey.net/
 // @version      2024-03-27
 // @description  Display, catalogue and compare IVs for a user's owned Pokemon in PokeFarm

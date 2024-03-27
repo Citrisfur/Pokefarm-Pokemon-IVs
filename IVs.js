@@ -1,6 +1,6 @@
 'use strict';
 
-console.log("Running PPIVsv0.0.2");
+console.log("Running PPIVsv0.0.3");
 
 const $ = unsafeWindow.$;
 const username = $("#globaluserlink").text();
@@ -455,9 +455,28 @@ async function fieldHandler() {
 
         fieldPokemonPromiseList.push(new Promise(async (resolve, reject) => {
           const fieldPokemonID = $(fieldmontips[i]).find("h3").eq(0).find("a").attr("href").slice(-5);
+          const fieldPokemonName = $(fieldmontips[i]).find("h3").eq(0).text();
+          const fieldPokemonSpecies = $(fieldmontips[i]).find(".icons").parent().text().substring(10, $(fieldmontips[i]).find(".icons").parent().text().length - 1);
+          const fieldPokemonForm = $(fieldmontips[i]).find(".forme").length ? $(fieldmontips[i]).find(".forme").text().substring(7) : null;
           let pokemon = field.pokemon.find(pokemon => pokemon.id === fieldPokemonID);
+          if (pokemon) {
+            if (pokemon.name != fieldPokemonName) {
+              pokemon.name = fieldPokemonName;
+              inventoryUpdated = true;
+            }
 
-          if (!pokemon) {
+            if (pokemon.species != fieldPokemonSpecies) {
+              log(`Found ${pokemon.species} who evolved into ${fieldPokemonSpecies}, updating inventory...`);
+              pokemon.species = fieldPokemonSpecies;
+              inventoryUpdated = true;
+            }
+
+            if (pokemon.form != fieldPokemonForm) {
+              log(`Found ${pokemon.species} who changed into ${fieldPokemonForm ? fieldPokemonForm : "Normal Forme"}, updating inventory...`);
+              pokemon.form = fieldPokemonForm;
+              inventoryUpdated = true;
+            }
+          } else {
             await new Promise((resolve, reject) => {
               GM_xmlhttpRequest({
                 method: 'GET',
@@ -478,9 +497,9 @@ async function fieldHandler() {
               });
 
               pokemon.name = pokemonAttributes.shift();
-              pokemon.species = $(response).find("#pkmnspecdata > p:nth-child(1) > a").text();
+              pokemon.species = fieldPokemonSpecies;
               pokemon.gender = pokemonAttributes.pop();
-              pokemon.form = $(response).find("#pkmnspecdata > p:nth-child(1) > span").length ? $(response).find("#pkmnspecdata > p:nth-child(1) > span").text().substring(1, $(response).find("#pkmnspecdata > p:nth-child(1) > span").text().length - 1) : null;
+              pokemon.form = fieldPokemonForm;
               pokemon.attributes = pokemonAttributes;
               pokemon.nature = $(response).find("#summary_col1 > div.party > div > div.extra > div.nature > b").text();
 
