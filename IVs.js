@@ -267,7 +267,9 @@ async function loadInventory() {
         let pokemonListPromiseList = [];
         for (let i = 0; i < response.fields.length; i++) {
           const field = {};
-          field.id = response.fields[i].id;
+          // response.field does have an id but its the order fields were created
+          // later queries (including PokeFarm's) use the order fields are arranged instead
+          field.id = i;
           field.name = response.fields[i].name;
           field.pokemon = [];
           inventory.fields.push(field);
@@ -278,8 +280,6 @@ async function loadInventory() {
             pokemonListPromiseList = [];
           }
 
-          // in ajax request fieldid is index and not the response field id because in the field list fieldid is the
-          // position they display in and no longer their actual field ids
           pokemonListPromiseList.push(new Promise((resolve, reject) => {
             unsafeWindow.ajax("fields/pkmnlist", {
               "fieldid": i,
@@ -440,11 +440,12 @@ async function searchInventory(pokemonSpecies) {
           const matches = field.pokemon.filter(pokemon => pokemon.species == evoSpecies).filter(pokemon => pokemon.form == evoForm);
 
           for (const match of matches) {
-            matchedPokemon.push([field.name, match]);
+            matchedPokemon.push([field.id, field.name, match]);
           }
         }
       }
 
+      matchedPokemon.sort((a, b) => { return a[0] - b[0]; });
       resolve(matchedPokemon);
     });
   });
@@ -473,6 +474,11 @@ function waitForElm(selector, timeout = 2) {
       setTimeout(() => reject(null), timeout * 1000);
     }
   });
+}
+
+
+function printPokemon(pokemon, release = "❌") {
+  return `${pokemon.attributes.length ? `${pokemon.attributes[0]}: ` : ""}<a href="/summary/${pokemon.id}">${pokemon.species}${pokemon.form ? ` [${pokemon.form}]` : ""}</a> [${pokemon.gender}] ${pokemon.ivs.health == 31 ? pokemon.ivs.health : "**"}/${pokemon.ivs.attack == 31 ? pokemon.ivs.attack : "**"}/${pokemon.ivs.defense == 31 ? pokemon.ivs.defense : "**"}/${pokemon.ivs.special_attack == 31 ? pokemon.ivs.special_attack : "**"}/${pokemon.ivs.special_defense == 31 ? pokemon.ivs.special_defense : "**"}/${pokemon.ivs.speed == 31 ? pokemon.ivs.speed : "**"} ${pokemon.perfect_ivs} = ${pokemon.iv_total} ${release}${pokemon.OT ? ` ${pokemon.OT}` : ""}`
 }
 
 
@@ -751,7 +757,7 @@ async function fieldHandler() {
 
           // test for both genders [male, female], if genderless first is used
           const highestPerfectIVs = [[], []];
-          for (const [field, pokemon] of result) {
+          for (const [fieldID, fieldName, pokemon] of result) {
             if (!highestPerfectIVs[pokemon.gender == "F" ? 1 : 0].length || pokemon.perfect_ivs > highestPerfectIVs[pokemon.gender == "F" ? 1 : 0][0].perfect_ivs) {
               highestPerfectIVs[pokemon.gender == "F" ? 1 : 0] = [pokemon];
             } else if (pokemon.perfect_ivs == highestPerfectIVs[pokemon.gender == "F" ? 1 : 0][0].perfect_ivs) {
@@ -836,44 +842,62 @@ async function fieldHandler() {
             }
 
             let output = "";
+            let fieldNameHeader = "";
             let warningTriggered = false;
             const checkedPokemonIDs = [];
-            for (const [field, pokemon] of result) {
+            const bestPokemon = [null, null];
+            for (const [fieldID, fieldName, pokemon] of result) {
+              if (fieldName != fieldNameHeader) {
+                if (fieldNameHeader) {
+                  output += "</br>";
+                }
+
+                fieldNameHeader = fieldName;
+                output += `<u style="text-decoration: unset; font-size: 14pt">${fieldNameHeader}:</u></br>`;
+              }
+
+              if (!bestPokemon[pokemon.gender == "F" ? 1 : 0]) {
+                bestPokemon[pokemon.gender == "F" ? 1 : 0] = pokemon;
+              }
+
               let release = "✅";
               if (checkedPokemonIDs.includes(pokemon.id)) {
                 release = "⚠️";
                 warningTriggered = true;
               } else if (pokemon.attributes.length || pokemon.perfect_ivs == 6) {
                 release = "❌";
-                output += "Special or 6IV</br>";
+                output += "<b>vv Keep: Special or 6IV vv</b></br>";
               } else if (highestPerfectIVs[pokemon.gender == "F" ? 1 : 0].find(tiePokemon => tiePokemon.id === pokemon.id)) {
                 if (highestPerfectIVs[pokemon.gender == "F" ? 1 : 0].length == 1) {
                   release = "❌";
-                  output += "Only highest IV</br>";
+                  output += `<b>vv Keep: Only highest IV [${pokemon.gender}] vv</b></br>`;
+                  bestPokemon[pokemon.gender == "F" ? 1 : 0] = pokemon;
                 } else if (diffOTPokemon[pokemon.gender == "F" ? 1 : 0].find(diffOTPkm => diffOTPkm.id === pokemon.id)) {
                   if (diffOTPokemon[pokemon.gender == "F" ? 1 : 0].length == 1) {
                     release = "❌";
-                    output += "Only different OT</br>";
+                    output += `<b>vv Keep: Only different OT [${pokemon.gender}] vv</b></br>`;
+                    bestPokemon[pokemon.gender == "F" ? 1 : 0] = pokemon;
                   } else if (pokemon.iv_total == highestIVTotal[pokemon.gender == "F" ? 1 : 0]) {
                     highestIVTotal[pokemon.gender == "F" ? 1 : 0] = -1;
                     release = "❌";
-                    output += "Highest IV total</br>";
+                    output += `<b>vv Keep: Highest IV total [${pokemon.gender}] vv</b></br>`;
+                    bestPokemon[pokemon.gender == "F" ? 1 : 0] = pokemon;
                   }
                 }
               }
 
-              output += `${field}${pokemon.attributes.length ? `/${pokemon.attributes[0]}` : ""}: <a href="/summary/${pokemon.id}">${pokemon.species}${pokemon.form ? ` [${pokemon.form}]` : ""}</a> [${pokemon.gender}] ${pokemon.ivs.health == 31 ? pokemon.ivs.health : "**"}/${pokemon.ivs.attack == 31 ? pokemon.ivs.attack : "**"}/${pokemon.ivs.defense == 31 ? pokemon.ivs.defense : "**"}/${pokemon.ivs.special_attack == 31 ? pokemon.ivs.special_attack : "**"}/${pokemon.ivs.special_defense == 31 ? pokemon.ivs.special_defense : "**"}/${pokemon.ivs.speed == 31 ? pokemon.ivs.speed : "**"} ${pokemon.perfect_ivs} = ${pokemon.iv_total} ${release}${pokemon.OT ? ` ${pokemon.OT}` : ""}</br>`;
+              output += `${printPokemon(pokemon, release)}</br>`;
 
               // if OTs were updated
               if (pokemonOTPromiseList.length) {
                 let newOTPokemon = highestPerfectIVs[0].find(diffOTPkm => diffOTPkm.id === pokemon.id);
                 if (newOTPokemon) {
-                  inventory.fields.find(invField => invField.name === field).pokemon.find(invPokemon => invPokemon.id === pokemon.id).OT = newOTPokemon.OT;
+                  inventory.fields.find(invField => invField.id === fieldID).pokemon.find(invPokemon => invPokemon.id === pokemon.id).OT = newOTPokemon.OT;
                 }
 
                 newOTPokemon = highestPerfectIVs[1].find(diffOTPkm => diffOTPkm.id === pokemon.id);
                 if (newOTPokemon) {
-                  inventory.fields.find(invField => invField.name === field).pokemon.find(invPokemon => invPokemon.id === pokemon.id).OT = newOTPokemon.OT;
+                  inventory.fields.find(invField => invField.id === fieldID).pokemon.find(invPokemon => invPokemon.id === pokemon.id).OT = newOTPokemon.OT;
                 }
 
                 inventoryUpdated = true;
@@ -882,7 +906,7 @@ async function fieldHandler() {
               checkedPokemonIDs.push(pokemon.id);
             }
 
-            output = `<i>Pokemon with checkmarks are recommended for release based on IVs and then original trainers.${warningTriggered ? "</br></br>One or more of your Pokemon were seen more than once in the inventory and were marked with a warning sign. You can remove these copies by revisiting the field(s) you moved the Pokemon from." : ""}</i></br></br>Sally reports ${surveyTotal} Pokemon in the ${fieldPokemonSpecies} evo line; I know of ${result.length}:</br></br>` + output;
+            output = `<i>Pokemon with checkmarks are recommended for release based on IVs and then original trainers.${warningTriggered ? "</br></br>One or more of your Pokemon were seen more than once in the inventory and were marked with a warning sign. You can remove these copies by revisiting the field(s) you moved the Pokemon from." : ""}</i></br></br>${result.length > 2 ? `<b style="text-align: center">Best ${fieldPokemonSpecies} family pairing found:</b></br>${bestPokemon[0] ? `</br>${printPokemon(bestPokemon[0])}` : ""}${bestPokemon[1] ? `</br>${printPokemon(bestPokemon[1])}` : ""}</br></br></br>` : ""}Sally reports ${surveyTotal} Pokemon in the ${fieldPokemonSpecies} evo line; I know of ${result.length}:</br><p>${output}</p>`;
             log(output, true);
 
             if (inventoryUpdated) {
