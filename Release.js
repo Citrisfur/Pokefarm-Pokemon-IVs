@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         PokeFarm Pokemon IVs
+// @name         PokeFarm Pokemon IVs v0.0.4
 // @namespace    http://tampermonkey.net/
-// @version      2024-03-27
+// @version      2024-03-28
 // @description  Display, catalogue and compare IVs for a user's owned Pokemon in PokeFarm
 // @author       Nathan Coy
 // @match        https://pokefarm.com/fields
@@ -13,13 +13,79 @@
 
 'use strict';
 
-console.log("Running PPIVsv0.0.2");
+console.log("Running PPIVsv0.0.4");
 
 const $ = unsafeWindow.$;
 const username = $("#globaluserlink").text();
 const inventory = {};
-inventory.fields = [];
+
 const invButton = $('<li data-name="IV Inventory"><a title="Inventory Count" style="cursor: pointer"><img src="https://pfq-static.com/img/navbar/dex.png"> (...) Inventory </a></li>');
+const dialogOuterDiv = $('<div class="dialog"><div><div></div></div></div>');
+const dialogInnerDiv = $('<div><h3>PPIVs Settings</h3><div>');
+const dialogResetDiv = $('<div><div>');
+const dialogResetText = $('<p>If your inventory has varied greatly from the actual state of your fields, the Reset button below will remove and rebuild your inventory files (the PokemonInventory.json files) in your PokeFarm notepad. Note that the script will automatically update your inventory when you visit the fields individually, so this command should be run sparingly.</br></br>If your inventory files are completely missing, the script will rebuild them automatically without the need to run this operation. To do so, simply refresh the page.</br></br>You can check the progress of the rebuild in the Pokemon Info tab, below your fields.</br></p>');
+const dialogResetButton = $('<button style="width: 100%; height: 4em">Reset</button>')
+const dialogSocialsDiv = $('<div><div>');
+const dialogSocialsText = $('<p>Follow along with development or report issues at PPIV\'s <a href="https://github.com/Citrisfur/Pokefarm-Pokemon-IVs">GitHub</a> page, or visit its <a href="PLACEHOLDER">PokeFarm forum</a>.</p>');
+const dialogCloseDiv = $('<div style="text-align: right"><div>');
+const dialogCloseButton = $('<button style="width: 25%; height: 2em">Close</button>');
+
+invButton.on("click", () => {
+  dialogResetButton.on("click", () => {
+    $('#field_nav > button:nth-child(1)').off("click", fieldHandler);
+    $('#field_nav > button:nth-child(2)').off("click", fieldHandler);
+    $('#field_nav > button:nth-child(3)').off("click", jumpButtonClick);
+    $("body").find(dialogOuterDiv).remove();
+    $("#core").removeClass('scrolllock');
+
+    for (let i = 0; i < fileIDs.length; i++) {
+      new Promise((resolve, reject) => {
+        unsafeWindow.ajax("farm/notepad", {
+          "mode": "command",
+          "command": "delete",
+          "operands": {
+            "type": "file",
+            "id": fileIDs[i]
+          }
+        }).success(() => {
+          resolve("Deleted a PokemonInventory.json file");
+        }).failure(() => {
+          reject("Warning: Failed to delete a PokemonInventory.json file (may not exist)");
+        });
+      });
+    }
+
+    fileIDs = [];
+    evoTrees = [];
+    inventory.fields = [];
+    updateInventoryCount();
+    loadInventory().then(async (result) => {
+      log(result);
+      await getFieldSurvey();
+      fieldHandler();
+      $('#field_nav > button:nth-child(1)').on("click", fieldHandler);
+      $('#field_nav > button:nth-child(2)').on("click", fieldHandler);
+      $('#field_nav > button:nth-child(3)').on("click", jumpButtonClick);
+    });
+  });
+
+  dialogCloseButton.on("click", () => {
+    $("body").find(dialogOuterDiv).remove();
+    $("#core").removeClass('scrolllock');
+  });
+
+  dialogOuterDiv.find("div > div").append(dialogInnerDiv);
+  dialogInnerDiv.append(dialogResetText);
+  dialogInnerDiv.append(dialogResetDiv);
+  dialogResetDiv.append(dialogResetText);
+  dialogResetDiv.append(dialogResetButton);
+  dialogInnerDiv.append(dialogSocialsDiv);
+  dialogSocialsDiv.append(dialogSocialsText);
+  dialogInnerDiv.append(dialogCloseDiv);
+  dialogCloseDiv.append(dialogCloseButton);
+  $("body").append(dialogOuterDiv);
+  $("#core").addClass('scrolllock');
+});
 
 $("#announcements > ul > li.spacer").eq(0).before(invButton);
 
@@ -74,16 +140,12 @@ function updateInventoryCount() {
 
   invButton.find("a").contents().filter(function() {
     return (this.nodeType == 3);
-  }).replaceWith(`(${totalPokemon ? totalPokemon : "..."}) Inventory`);
+  }).replaceWith(` (${totalPokemon ? totalPokemon : "..."}) Inventory`);
 }
 
 
-function toggleInvButton() {
-  if (invButton.css("pointer-events") == "none") {
-    invButton.css("pointer-events", "").css("opacity", "");
-  } else {
-    invButton.css("pointer-events", "none").css("opacity", "0.6");
-  }
+function toggleInvResetButton() {
+  dialogResetButton.prop("disabled", !dialogResetButton.prop("disabled"));
 }
 
 
@@ -170,7 +232,8 @@ function saveInventory(fieldIndex = -1) {
 
 async function loadInventory() {
   return new Promise(async (resolve) => {
-    toggleInvButton();
+    inventory.fields = [];
+    toggleInvResetButton();
     const inventoryFilePromiseList = [];
     await new Promise((resolve, reject) => {
       unsafeWindow.ajax("farm/notepad", {
@@ -205,7 +268,7 @@ async function loadInventory() {
       Promise.all(inventoryFilePromiseList).then(() => {
         updateInventoryCount();
         console.log(inventory);
-        toggleInvButton();
+        toggleInvResetButton();
         resolve(`Loaded inventory from ${username}'s notepad.`);
       });
     } else {
@@ -214,8 +277,6 @@ async function loadInventory() {
         uid: 0
       }).success(async (response) => {
         totalFields = response.fields.length;
-        inventory.fields = [];
-
         let pokemonListPromiseList = [];
         for (let i = 0; i < response.fields.length; i++) {
           const field = {};
@@ -286,7 +347,7 @@ async function loadInventory() {
 
         Promise.all(pokemonListPromiseList).then(() => {
           saveInventory().then(() => {
-            toggleInvButton();
+            toggleInvResetButton();
             resolve("Built inventory from PokeFarm fields.");
           });
         });
@@ -468,9 +529,28 @@ async function fieldHandler() {
 
         fieldPokemonPromiseList.push(new Promise(async (resolve, reject) => {
           const fieldPokemonID = $(fieldmontips[i]).find("h3").eq(0).find("a").attr("href").slice(-5);
+          const fieldPokemonName = $(fieldmontips[i]).find("h3").eq(0).text();
+          const fieldPokemonSpecies = $(fieldmontips[i]).find(".icons").parent().text().substring(10, $(fieldmontips[i]).find(".icons").parent().text().length - 1);
+          const fieldPokemonForm = $(fieldmontips[i]).find(".forme").length ? $(fieldmontips[i]).find(".forme").text().substring(7) : null;
           let pokemon = field.pokemon.find(pokemon => pokemon.id === fieldPokemonID);
+          if (pokemon) {
+            if (pokemon.name != fieldPokemonName) {
+              pokemon.name = fieldPokemonName;
+              inventoryUpdated = true;
+            }
 
-          if (!pokemon) {
+            if (pokemon.species != fieldPokemonSpecies) {
+              log(`Found ${pokemon.species} who evolved into ${fieldPokemonSpecies}, updating inventory...`);
+              pokemon.species = fieldPokemonSpecies;
+              inventoryUpdated = true;
+            }
+
+            if (pokemon.form != fieldPokemonForm) {
+              log(`Found ${pokemon.species} who changed into ${fieldPokemonForm ? fieldPokemonForm : "Normal Forme"}, updating inventory...`);
+              pokemon.form = fieldPokemonForm;
+              inventoryUpdated = true;
+            }
+          } else {
             await new Promise((resolve, reject) => {
               GM_xmlhttpRequest({
                 method: 'GET',
@@ -491,9 +571,9 @@ async function fieldHandler() {
               });
 
               pokemon.name = pokemonAttributes.shift();
-              pokemon.species = $(response).find("#pkmnspecdata > p:nth-child(1) > a").text();
+              pokemon.species = fieldPokemonSpecies;
               pokemon.gender = pokemonAttributes.pop();
-              pokemon.form = $(response).find("#pkmnspecdata > p:nth-child(1) > span").length ? $(response).find("#pkmnspecdata > p:nth-child(1) > span").text().substring(1, $(response).find("#pkmnspecdata > p:nth-child(1) > span").text().length - 1) : null;
+              pokemon.form = fieldPokemonForm;
               pokemon.attributes = pokemonAttributes;
               pokemon.nature = $(response).find("#summary_col1 > div.party > div > div.extra > div.nature > b").text();
 
@@ -592,27 +672,15 @@ async function fieldHandler() {
         saveInventory(inventory.fields.indexOf(field));
       };
 
-      // displays perfect iv count on pokemon in mass release list
-      waitForElm('#field_field > .menu > label[data-menu="release"]').then((elm) => {
+      waitForElm('#field_field > .menu > label[data-menu="rename"]', 0).then((elm) => {
         elm.on("click", () => {
-          waitForElm(".bulkpokemonlist > ul > li > label > .icons").then((elm) => {
-            elm.each(function() {
-              let color = "white";
-              switch (fieldPokemonIDs[$(this).parent().find("input").val()]) {
-                case 0:
-                  color = "red";
-                  break;
-                case 1:
-                  color = "violet";
-                  break;
-                case 5:
-                  color = "green";
-                  break;
-                case 6:
-                  color = "gold";
-              }
-
-              $(this).after(`<p style="margin-block-start: unset; margin-block-end: 1pt; text-align: center; color: ${color};">${fieldPokemonIDs[$(this).parent().find("input").val()]} Perfect IVs</p>`);
+          waitForElm("body > div.dialog", 0).then((elm) => {
+            const oldFieldName = elm.find("#renametextbox").val();
+            elm.find("button").eq(0).on("click", () => {
+              const newFieldName = elm.find("#renametextbox").val();
+              inventory.fields.find(invField => invField.name === oldFieldName).name = newFieldName;
+              log(`Field ${oldFieldName} renamed to ${newFieldName}.`);
+              saveInventory(inventory.fields.indexOf(field));
             });
           });
         });
@@ -637,6 +705,31 @@ async function fieldHandler() {
                   $(this).on("click", fieldHandler);
                 });
               }).catch(() => {});
+            });
+          });
+        });
+      });
+
+      waitForElm('#field_field > .menu > label[data-menu="release"]', 0).then((elm) => {
+        elm.on("click", () => {
+          waitForElm(".bulkpokemonlist > ul > li > label > .icons").then((elm) => {
+            elm.each(function() {
+              let color = "white";
+              switch (fieldPokemonIDs[$(this).parent().find("input").val()]) {
+                case 0:
+                  color = "red";
+                  break;
+                case 1:
+                  color = "violet";
+                  break;
+                case 5:
+                  color = "green";
+                  break;
+                case 6:
+                  color = "gold";
+              }
+
+              $(this).after(`<p style="margin-block-start: unset; margin-block-end: 1pt; text-align: center; color: ${color};">${fieldPokemonIDs[$(this).parent().find("input").val()]} Perfect IVs</p>`);
             });
           });
         });
@@ -809,58 +902,22 @@ async function fieldHandler() {
 }
 
 
+function jumpButtonClick() {
+  waitForElm("#fieldjumpnav > li > button").then((elm) => {
+    elm.each(function() {
+      $(this).on("click", fieldHandler);
+    });
+  });
+}
+
+
 loadInventory().then(async (result) => {
   log(result);
   await getFieldSurvey();
   fieldHandler();
 
   // adds click listeners to previous, next, and all field jump buttons
-  function jumpButtonClick() {
-    waitForElm("#fieldjumpnav > li > button").then((elm) => {
-      elm.each(function() {
-        $(this).on("click", fieldHandler);
-      });
-    });
-  }
   $('#field_nav > button:nth-child(1)').on("click", fieldHandler);
   $('#field_nav > button:nth-child(2)').on("click", fieldHandler);
   $('#field_nav > button:nth-child(3)').on("click", jumpButtonClick);
-
-  invButton.on("click", () => {
-    let popup = confirm("WARNING!\n\nThis will remove and rebuild your inventory files (the PokemonInventory.json files) in your PokeFarm notepad. This should only be run if absolutely necessary.\n\nNote: If your inventory files are completely missing, the script will rebuild them automatically without the need to run this operation. To do so, simply refresh the page.\n\nYou can check the progress of the rebuild in the Pokemon Info tab. Click OK to continue.");
-    if (popup) {
-      $('#field_nav > button:nth-child(1)').off("click", fieldHandler);
-      $('#field_nav > button:nth-child(2)').off("click", fieldHandler);
-      $('#field_nav > button:nth-child(3)').off("click", jumpButtonClick);
-      for (let i = 0; i < fileIDs.length; i++) {
-        new Promise((resolve, reject) => {
-          unsafeWindow.ajax("farm/notepad", {
-            "mode": "command",
-            "command": "delete",
-            "operands": {
-              "type": "file",
-              "id": fileIDs[i]
-            }
-          }).success(() => {
-            resolve("Deleted a PokemonInventory.json file");
-          }).failure(() => {
-            reject("Warning: Failed to delete a PokemonInventory.json file (may not exist)");
-          });
-        });
-      }
-
-      fileIDs = [];
-      evoTrees = [];
-      inventory.fields = [];
-      updateInventoryCount();
-      loadInventory().then(async (result) => {
-        log(result);
-        await getFieldSurvey();
-        fieldHandler();
-        $('#field_nav > button:nth-child(1)').on("click", fieldHandler);
-        $('#field_nav > button:nth-child(2)').on("click", fieldHandler);
-        $('#field_nav > button:nth-child(3)').on("click", jumpButtonClick);
-      });
-    }
-  });
 });
