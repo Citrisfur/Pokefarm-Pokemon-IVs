@@ -864,9 +864,16 @@ async function fieldHandler() {
               if (checkedPokemonIDs.includes(pokemon.id)) {
                 release = "⚠️";
                 warningTriggered = true;
-              } else if (pokemon.attributes.length || pokemon.perfect_ivs == 6) {
+              } else if (pokemon.attributes.length) {
                 release = "❌";
-                output += "<b>vv Keep: Special or 6IV vv</b></br>";
+                output += "<b>vv Keep: Special vv</b></br>";
+              } else if (pokemon.perfect_ivs == 6) {
+                release = "❌";
+                output += "<b>vv Keep: 6IV vv</b></br>";
+                // attempts to find a OT different from the player from the 6IVs
+                if (!bestPokemon[pokemon.gender == "F" ? 1 : 0].OT || bestPokemon[pokemon.gender == "F" ? 1 : 0].OT == username) {
+                  bestPokemon[pokemon.gender == "F" ? 1 : 0] = pokemon;
+                }
               } else if (highestPerfectIVs[pokemon.gender == "F" ? 1 : 0].find(tiePokemon => tiePokemon.id === pokemon.id)) {
                 if (highestPerfectIVs[pokemon.gender == "F" ? 1 : 0].length == 1) {
                   release = "❌";
