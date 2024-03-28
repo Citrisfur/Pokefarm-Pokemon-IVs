@@ -749,8 +749,6 @@ async function fieldHandler() {
             }
           }
 
-          let output = `Sally reports ${surveyTotal} Pokemon in the ${fieldPokemonSpecies} evo line; I know of ${result.length}:</br><i>Pokemon with checkmarks are recommended for release based on IVs and then original trainers.</i></br>`;
-
           // test for both genders [male, female], if genderless first is used
           const highestPerfectIVs = [[], []];
           for (const [field, pokemon] of result) {
@@ -837,9 +835,15 @@ async function fieldHandler() {
               }
             }
 
+            let output = "";
+            let warningTriggered = false;
+            const checkedPokemonIDs = [];
             for (const [field, pokemon] of result) {
               let release = "✅";
-              if (pokemon.attributes.length || pokemon.perfect_ivs == 6) {
+              if (checkedPokemonIDs.includes(pokemon.id)) {
+                release = "⚠️";
+                warningTriggered = true;
+              } else if (pokemon.attributes.length || pokemon.perfect_ivs == 6) {
                 release = "❌";
                 output += "Special or 6IV</br>";
               } else if (highestPerfectIVs[pokemon.gender == "F" ? 1 : 0].find(tiePokemon => tiePokemon.id === pokemon.id)) {
@@ -874,8 +878,11 @@ async function fieldHandler() {
 
                 inventoryUpdated = true;
               }
+
+              checkedPokemonIDs.push(pokemon.id);
             }
 
+            output = `<i>Pokemon with checkmarks are recommended for release based on IVs and then original trainers.${warningTriggered ? "</br></br>One or more of your Pokemon were seen more than once in the inventory and were marked with a warning sign. You can remove these copies by revisiting the field(s) you moved the Pokemon from." : ""}</i></br></br>Sally reports ${surveyTotal} Pokemon in the ${fieldPokemonSpecies} evo line; I know of ${result.length}:</br></br>` + output;
             log(output, true);
 
             if (inventoryUpdated) {
