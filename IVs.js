@@ -11,14 +11,16 @@ const dialogOuterDiv = $('<div class="dialog"><div><div></div></div></div>');
 const dialogInnerDiv = $('<div><h3>PPIVs Settings</h3><div>');
 const dialogResetDiv = $('<div><div>');
 const dialogResetText = $('<p>If your inventory has varied greatly from the actual state of your fields, the Reset button below will remove and rebuild your inventory files (the PokemonInventory.json files) in your PokeFarm notepad. Note that the script will automatically update your inventory when you visit the fields individually, so this command should be run sparingly.</br></br>If your inventory files are completely missing, the script will rebuild them automatically without the need to run this operation. To do so, simply refresh the page.</br></br>You can check the progress of the rebuild in the Pokemon Info tab, below your fields.</br></p>');
-const dialogResetButton = $('<button style="width: 100%; height: 4em">Reset</button>')
+const dialogInvResetButton = $('<button style="width: 100%; height: 4em">Reset</button>');
 const dialogSocialsDiv = $('<div><div>');
-const dialogSocialsText = $('<p>Follow along with development or report issues at PPIV\'s <a href="https://github.com/Citrisfur/Pokefarm-Pokemon-IVs">GitHub</a> page, or visit its <a href="PLACEHOLDER">PokeFarm forum</a>.</p>');
+const dialogSocialsText = $('<p>Follow along with development or report issues at PPIV\'s <a href="https://github.com/Citrisfur/Pokefarm-Pokemon-IVs">GitHub</a> page, or visit its <a href="/forum/thread/425427">PokeFarm forum</a>.</p>');
 const dialogCloseDiv = $('<div style="text-align: right"><div>');
 const dialogCloseButton = $('<button style="width: 25%; height: 2em">Close</button>');
 
+dialogInvResetButton.prop("disabled", true);
+
 invButton.on("click", () => {
-  dialogResetButton.on("click", () => {
+  dialogInvResetButton.on("click", () => {
     $('#field_nav > button:nth-child(1)').off("click", fieldHandler);
     $('#field_nav > button:nth-child(2)').off("click", fieldHandler);
     $('#field_nav > button:nth-child(3)').off("click", jumpButtonClick);
@@ -65,7 +67,7 @@ invButton.on("click", () => {
   dialogInnerDiv.append(dialogResetText);
   dialogInnerDiv.append(dialogResetDiv);
   dialogResetDiv.append(dialogResetText);
-  dialogResetDiv.append(dialogResetButton);
+  dialogResetDiv.append(dialogInvResetButton);
   dialogInnerDiv.append(dialogSocialsDiv);
   dialogSocialsDiv.append(dialogSocialsText);
   dialogInnerDiv.append(dialogCloseDiv);
@@ -132,12 +134,12 @@ function updateInventoryCount() {
 
 
 function toggleInvResetButton() {
-  dialogResetButton.prop("disabled", !dialogResetButton.prop("disabled"));
+  dialogInvResetButton.prop("disabled", !dialogInvResetButton.prop("disabled"));
 }
 
 
 let fileIDs = [];
-let totalFields = 1
+let totalFields = 1;
 function saveInventory(fieldIndex = -1) {
   return new Promise(async (resolve) => {
     // save full inventory
@@ -211,7 +213,6 @@ function saveInventory(fieldIndex = -1) {
     }
 
     updateInventoryCount();
-    console.log(inventory);
     resolve("Inventory saved.");
   });
 }
@@ -254,7 +255,6 @@ async function loadInventory() {
       log(`${fileIDs.length} inventory file(s) found...`);
       Promise.all(inventoryFilePromiseList).then(() => {
         updateInventoryCount();
-        console.log(inventory);
         toggleInvResetButton();
         resolve(`Loaded inventory from ${username}'s notepad.`);
       });
@@ -334,7 +334,6 @@ async function loadInventory() {
 
         Promise.all(pokemonListPromiseList).then(() => {
           saveInventory().then(() => {
-            toggleInvResetButton();
             resolve("Built inventory from PokeFarm fields.");
           });
         });
@@ -389,6 +388,7 @@ function getFieldSurvey() {
       reject("ERROR: Could not retrieve Sally's field survey");
     });
   }).then((result) => {
+    evoTrees = [];
     fieldSurvey = result;
   });
 }
@@ -846,6 +846,7 @@ async function fieldHandler() {
             let warningTriggered = false;
             const checkedPokemonIDs = [];
             const bestPokemon = [null, null];
+            const saveFieldIDs = [];
             for (const [fieldID, fieldName, pokemon] of result) {
               if (fieldName != fieldNameHeader) {
                 if (fieldNameHeader) {
@@ -867,9 +868,14 @@ async function fieldHandler() {
               } else if (pokemon.attributes.length) {
                 release = "❌";
                 output += "<b>vv Keep: Special vv</b></br>";
-              } else if (pokemon.perfect_ivs == 6) {
-                release = "❌";
-                output += "<b>vv Keep: 6IV vv</b></br>";
+              }
+
+              if (pokemon.perfect_ivs == 6) {
+                if (release == "✅") {
+                  release = "❌";
+                  output += "<b>vv Keep: 6IV vv</b></br>";
+                }
+
                 // attempts to find a OT different from the player from the 6IVs
                 if (!bestPokemon[pokemon.gender == "F" ? 1 : 0].OT || bestPokemon[pokemon.gender == "F" ? 1 : 0].OT == username) {
                   bestPokemon[pokemon.gender == "F" ? 1 : 0] = pokemon;
@@ -907,7 +913,20 @@ async function fieldHandler() {
                   inventory.fields.find(invField => invField.id === fieldID).pokemon.find(invPokemon => invPokemon.id === pokemon.id).OT = newOTPokemon.OT;
                 }
 
-                inventoryUpdated = true;
+                let rangeIncludesFieldID = false;
+                for (let oldFieldID of saveFieldIDs) {
+                  const lowerFieldIndex = oldFieldID % 50 ? Math.floor(oldFieldID / 50) * 50 : oldFieldID;
+                  const upperFieldIndex = oldFieldID % 50 ? Math.ceil(oldFieldID / 50) * 50 : oldFieldID + 50;
+                  if (lowerFieldIndex <= fieldID && fieldID < upperFieldIndex) { rangeIncludesFieldID = true; }
+                }
+
+                if (!rangeIncludesFieldID) {
+                  saveFieldIDs.push(fieldID);
+                }
+
+                if (!saveFieldIDs.length) {
+                  saveFieldIDs.push(fieldID);
+                }
               }
 
               checkedPokemonIDs.push(pokemon.id);
@@ -916,8 +935,8 @@ async function fieldHandler() {
             output = `<i>Pokemon with checkmarks are recommended for release based on IVs and then original trainers.${warningTriggered ? "</br></br>One or more of your Pokemon were seen more than once in the inventory and were marked with a warning sign. You can remove these copies by revisiting the field(s) you moved the Pokemon from." : ""}</i></br></br>${result.length > 2 ? `<b style="text-align: center">Best ${fieldPokemonSpecies} family pairing found:</b></br>${bestPokemon[0] ? `</br>${printPokemon(bestPokemon[0])}` : ""}${bestPokemon[1] ? `</br>${printPokemon(bestPokemon[1])}` : ""}</br></br></br>` : ""}Sally reports ${surveyTotal} Pokemon in the ${fieldPokemonSpecies} evo line; I know of ${result.length}:</br><p>${output}</p>`;
             log(output, true);
 
-            if (inventoryUpdated) {
-              //saveInventory();
+            for (const fieldID of saveFieldIDs) {
+              saveInventory(fieldID);
             }
           });
         });
@@ -938,6 +957,7 @@ function jumpButtonClick() {
 
 loadInventory().then(async (result) => {
   log(result);
+  toggleInvResetButton();
   await getFieldSurvey();
   fieldHandler();
 
