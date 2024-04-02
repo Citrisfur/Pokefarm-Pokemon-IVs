@@ -23,6 +23,14 @@ const inventory = {};
 const invButton = $('<li data-name="IV Inventory"><a title="Inventory Count" style="cursor: pointer"><img src="https://pfq-static.com/img/navbar/dex.png"> (...) Inventory </a></li>');
 const dialogOuterDiv = $('<div class="dialog"><div><div></div></div></div>');
 const dialogInnerDiv = $('<div><h3>PPIVs Settings</h3><div>');
+const dialogIVRangeDiv = $('<div><div>');
+const dialogIVRangeText = $('<p>Define a custom range for Perfect IVs here, used on the field display, in the mass release list, and when searching evo lines. Resets to default on page refresh!</p>');
+const IVRangeLabel = $('<p>Min: </p>');
+const minIVRange = $('<input type="number" id="minIV" min="0" max="31" value="31"/>');
+const maxIVRange = $('<input type="number" id="maxIV" min="0" max="31" value="31"/>');
+IVRangeLabel.append(minIVRange);
+IVRangeLabel.append(" Max: ");
+IVRangeLabel.append(maxIVRange);
 const dialogResetDiv = $('<div><div>');
 const dialogResetText = $('<p>If your inventory has varied greatly from the actual state of your fields, the Reset button below will remove and rebuild your inventory files (the PokemonInventory.json files) in your PokeFarm notepad. Note that the script will automatically update your inventory when you visit the fields individually, so this command should be run sparingly.</br></br>If your inventory files are completely missing, the script will rebuild them automatically without the need to run this operation. To do so, simply refresh the page.</br></br>You can check the progress of the rebuild in the Pokemon Info tab, below your fields.</br></p>');
 const dialogInvResetButton = $('<button style="width: 100%; height: 4em">Reset</button>');
@@ -33,8 +41,11 @@ const dialogCloseButton = $('<button style="width: 25%; height: 2em">Close</butt
 
 dialogInvResetButton.prop("disabled", true);
 
+let userMinIV = 31;
+let userMaxIV = 31;
 invButton.on("click", () => {
   dialogInvResetButton.on("click", () => {
+    toggleInvResetButton();
     $('#field_nav > button:nth-child(1)').off("click", fieldHandler);
     $('#field_nav > button:nth-child(2)').off("click", fieldHandler);
     $('#field_nav > button:nth-child(3)').off("click", jumpButtonClick);
@@ -65,20 +76,58 @@ invButton.on("click", () => {
     loadInventory().then(async (result) => {
       log(result);
       await getFieldSurvey();
-      fieldHandler();
+      fieldHandler().catch(() => {});
       $('#field_nav > button:nth-child(1)').on("click", fieldHandler);
       $('#field_nav > button:nth-child(2)').on("click", fieldHandler);
       $('#field_nav > button:nth-child(3)').on("click", jumpButtonClick);
+      toggleInvResetButton();
     });
   });
 
   dialogCloseButton.on("click", () => {
     $("body").find(dialogOuterDiv).remove();
     $("#core").removeClass('scrolllock');
+    userMinIV = parseInt(minIVRange.val());
+    if (isNaN(userMinIV)) {
+      userMinIV = 31;
+      minIVRange.val(31);
+      log("Couldn't parse your minimum IV; it was set to 31.");
+    } else if (userMinIV < 0) {
+      userMinIV = 0;
+      minIVRange.val(0);
+      log("Your minimum IV was below 0; it was set to 0.");
+    } else if (userMinIV > 31) {
+      userMinIV = 31;
+      minIVRange.val(31);
+      log("Your minimum IV was above 31; it was set to 31.");
+    }
+
+    userMaxIV = parseInt(maxIVRange.val());
+    if (isNaN(userMaxIV)) {
+      userMaxIV = 31;
+      maxIVRange.val(31);
+      log("Couldn't parse your maximum IV; it was set to 31.");
+    } else if (userMaxIV < 0) {
+      userMaxIV = 0;
+      maxIVRange.val(0);
+      log("Your maximum IV was below 0; it was set to 0.");
+    } else if (userMaxIV > 31) {
+      userMaxIV = 31;
+      maxIVRange.val(31);
+      log("Your maximum IV was above 31; it was set to 31.");
+    }
+
+    if (userMinIV > userMaxIV) {
+      userMinIV = userMaxIV;
+      minIVRange.val(userMinIV);
+      log(`Your set minimum IV was greater than your set maximum IV. They have both adjusted to ${userMaxIV}.`);
+    }
   });
 
   dialogOuterDiv.find("div > div").append(dialogInnerDiv);
-  dialogInnerDiv.append(dialogResetText);
+  dialogInnerDiv.append(dialogIVRangeDiv);
+  dialogIVRangeDiv.append(dialogIVRangeText);
+  dialogIVRangeDiv.append(IVRangeLabel);
   dialogInnerDiv.append(dialogResetDiv);
   dialogResetDiv.append(dialogResetText);
   dialogResetDiv.append(dialogInvResetButton);
@@ -235,7 +284,6 @@ function saveInventory(fieldIndex = -1) {
 async function loadInventory() {
   return new Promise(async (resolve) => {
     inventory.fields = [];
-    toggleInvResetButton();
     const inventoryFilePromiseList = [];
     await new Promise((resolve, reject) => {
       unsafeWindow.ajax("farm/notepad", {
@@ -269,7 +317,6 @@ async function loadInventory() {
       log(`${fileIDs.length} inventory file(s) found...`);
       Promise.all(inventoryFilePromiseList).then(() => {
         updateInventoryCount();
-        toggleInvResetButton();
         resolve(`Loaded inventory from ${username}'s notepad.`);
       });
     } else {
@@ -492,7 +539,19 @@ function waitForElm(selector, timeout = 2) {
 
 
 function printPokemon(pokemon, release = "❌") {
-  return `${pokemon.attributes.length ? `${pokemon.attributes[0]}: ` : ""}<a href="/summary/${pokemon.id}">${pokemon.species}${pokemon.form ? ` [${pokemon.form}]` : ""}</a> [${pokemon.gender}] ${pokemon.ivs.health == 31 ? pokemon.ivs.health : "**"}/${pokemon.ivs.attack == 31 ? pokemon.ivs.attack : "**"}/${pokemon.ivs.defense == 31 ? pokemon.ivs.defense : "**"}/${pokemon.ivs.special_attack == 31 ? pokemon.ivs.special_attack : "**"}/${pokemon.ivs.special_defense == 31 ? pokemon.ivs.special_defense : "**"}/${pokemon.ivs.speed == 31 ? pokemon.ivs.speed : "**"} ${pokemon.perfect_ivs} = ${pokemon.iv_total} ${release}${pokemon.OT ? ` ${pokemon.OT}` : ""}`
+  let ivString = "";
+  let userPerfectIVs = 0;
+  for (const iv of Object.values(pokemon.ivs)) {
+    if (userMinIV <= iv && iv <= userMaxIV) {
+      userPerfectIVs++;
+      ivString += `${iv}/`;
+    } else {
+      ivString += "**/";
+    }
+  }
+  ivString = ivString.substring(0, ivString.length - 1);
+
+  return `${pokemon.attributes.length ? `${pokemon.attributes[0]}: ` : ""}<a href="/summary/${pokemon.id}">${pokemon.species}${pokemon.form ? ` [${pokemon.form}]` : ""}</a> [${pokemon.gender}] ${ivString}${userMinIV == 0 && userMaxIV == 31 ? "" : ` ${userPerfectIVs}`} = ${pokemon.iv_total} ${release}${pokemon.OT ? ` ${pokemon.OT}` : ""}`
 }
 
 
@@ -630,24 +689,33 @@ async function fieldHandler() {
             });
           }
 
-          let color = "white";
-          switch (pokemon.perfect_ivs) {
-            case 0:
-              color = "red";
-              break;
-            case 1:
-              color = "violet";
-              break;
-            case 5:
-              color = "green";
-              break;
-            case 6:
-              color = "gold";
+          let userPerfectIVs = 0;
+          for (const iv of Object.values(pokemon.ivs)) {
+            if (userMinIV <= iv && iv <= userMaxIV) {
+              userPerfectIVs++;
+            }
           }
 
-          $(fieldmontips[i]).parent().prev().children().eq(1).before(`<p style="display: unset; position: absolute; bottom: 0px; right: 0px; margin: 0px; background: #000000; z-index: 1; color: ${color};">${pokemon.perfect_ivs}</p>`);
-          fieldPokemonIDs[fieldPokemonID] = pokemon.perfect_ivs;
+          if (!(userMinIV == 0 && userMaxIV == 31)) {
+            let color = "white";
+            switch (userPerfectIVs) {
+              case 0:
+                color = "red";
+                break;
+              case 1:
+                color = "violet";
+                break;
+              case 5:
+                color = "green";
+                break;
+              case 6:
+                color = "gold";
+            }
 
+            $(fieldmontips[i]).parent().prev().children().eq(1).before(`<p style="display: unset; position: absolute; bottom: 0px; right: 0px; margin: 0px; background: #000000; z-index: 1; color: ${color};">${userPerfectIVs}</p>`);
+          }
+
+          fieldPokemonIDs[fieldPokemonID] = userPerfectIVs;
           resolve(`Retrieved data of field Pokemon ${pokemon.id}`);
         }));
       }
@@ -718,28 +786,30 @@ async function fieldHandler() {
       });
 
       waitForElm('#field_field > .menu > label[data-menu="release"]', 0).then((elm) => {
-        elm.on("click", () => {
-          waitForElm(".bulkpokemonlist > ul > li > label > .icons").then((elm) => {
-            elm.each(function() {
-              let color = "white";
-              switch (fieldPokemonIDs[$(this).parent().find("input").val()]) {
-                case 0:
-                  color = "red";
-                  break;
-                case 1:
-                  color = "violet";
-                  break;
-                case 5:
-                  color = "green";
-                  break;
-                case 6:
-                  color = "gold";
-              }
+        if (!(userMinIV == 0 && userMaxIV == 31)) {
+          elm.on("click", () => {
+            waitForElm(".bulkpokemonlist > ul > li > label > .icons").then((elm) => {
+              elm.each(function() {
+                let color = "white";
+                switch (fieldPokemonIDs[$(this).parent().find("input").val()]) {
+                  case 0:
+                    color = "red";
+                    break;
+                  case 1:
+                    color = "violet";
+                    break;
+                  case 5:
+                    color = "green";
+                    break;
+                  case 6:
+                    color = "gold";
+                }
 
-              $(this).after(`<p style="margin-block-start: unset; margin-block-end: 1pt; text-align: center; color: ${color};">${fieldPokemonIDs[$(this).parent().find("input").val()]} Perfect IVs</p>`);
+                $(this).after(`<p style="margin-block-start: unset; margin-block-end: 1pt; text-align: center; color: ${color};">${fieldPokemonIDs[$(this).parent().find("input").val()]} Perfect IVs</p>`);
+              });
             });
           });
-        });
+        }
       });
     });
 
@@ -769,190 +839,320 @@ async function fieldHandler() {
             }
           }
 
-          // test for both genders [male, female], if genderless first is used
-          const highestPerfectIVs = [[], []];
-          for (const [fieldID, fieldName, pokemon] of result) {
-            if (!highestPerfectIVs[pokemon.gender == "F" ? 1 : 0].length || pokemon.perfect_ivs > highestPerfectIVs[pokemon.gender == "F" ? 1 : 0][0].perfect_ivs) {
-              highestPerfectIVs[pokemon.gender == "F" ? 1 : 0] = [pokemon];
-            } else if (pokemon.perfect_ivs == highestPerfectIVs[pokemon.gender == "F" ? 1 : 0][0].perfect_ivs) {
-              highestPerfectIVs[pokemon.gender == "F" ? 1 : 0].push(pokemon);
-            }
-          }
-
           let pokemonOTPromiseList = [];
-          if (highestPerfectIVs[0].length != 1) {
-            for (const tiePokemon of highestPerfectIVs[0]) {
-              if (!tiePokemon.OT) {
-                // rate limit
-                if (pokemonOTPromiseList.length > 9) {
-                  await Promise.all(pokemonOTPromiseList);
-                  pokemonOTPromiseList = [];
-                }
+          let output = "";
+          let fieldNameHeader = "";
+          let rangeInfoString = "";
+          let warningTriggered = false;
+          const checkedPokemonIDs = [];
+          const bestPokemon = [null, null];
+          const saveFieldIDs = [];
+          await new Promise(async (resolve) => {
+            if (userMinIV == 0 && userMaxIV == 31) {
+              for (const [fieldID, fieldName, pokemon] of result) {
+                if (!pokemon.OT) {
+                  // rate limit
+                  if (pokemonOTPromiseList.length > 9) {
+                    await Promise.all(pokemonOTPromiseList);
+                    pokemonOTPromiseList = [];
+                  }
 
-                pokemonOTPromiseList.push(getPokemonOT(tiePokemon.id).then((result) => {
-                  tiePokemon.OT = result;
-                }));
-              }
-            }
-          }
-
-          if (highestPerfectIVs[1].length != 1) {
-            for (const tiePokemon of highestPerfectIVs[1]) {
-              if (!tiePokemon.OT) {
-                // rate limit
-                if (pokemonOTPromiseList.length > 9) {
-                  await Promise.all(pokemonOTPromiseList);
-                  pokemonOTPromiseList = [];
-                }
-
-                pokemonOTPromiseList.push(getPokemonOT(tiePokemon.id).then((result) => {
-                  tiePokemon.OT = result;
-                }));
-              }
-            }
-          }
-
-          Promise.all(pokemonOTPromiseList).then(() => {
-            const diffOTPokemon = [[], []];
-            if (highestPerfectIVs[0].length != 1) {
-              for (const tiePokemon of highestPerfectIVs[0]) {
-                if (tiePokemon.OT != username) {
-                  diffOTPokemon[0].push(tiePokemon);
+                  pokemonOTPromiseList.push(getPokemonOT(pokemon.id).then((result) => {
+                    pokemon.OT = result;
+                  }));
                 }
               }
-            }
 
-            if (highestPerfectIVs[1].length != 1) {
-              for (const tiePokemon of highestPerfectIVs[1]) {
-                if (tiePokemon.OT != username) {
-                  diffOTPokemon[1].push(tiePokemon);
-                }
-              }
-            }
-
-            const highestIVTotal = [-1, -1];
-            if (diffOTPokemon[0].length != 1) {
-              if (!diffOTPokemon[0].length) {
-                diffOTPokemon[0] = highestPerfectIVs[0];
-              }
-
-              for (const tiePokemon of diffOTPokemon[0]) {
-                if (!highestIVTotal[0] || tiePokemon.iv_total > highestIVTotal[0]) {
-                  highestIVTotal[0] = tiePokemon.iv_total;
-                }
-              }
-            }
-
-            if (diffOTPokemon[1].length != 1) {
-              if (!diffOTPokemon[1].length) {
-                diffOTPokemon[1] = highestPerfectIVs[1];
-              }
-
-              for (const tiePokemon of diffOTPokemon[1]) {
-                if (!highestIVTotal[1] || tiePokemon.iv_total > highestIVTotal[1]) {
-                  highestIVTotal[1] = tiePokemon.iv_total;
-                }
-              }
-            }
-
-            let output = "";
-            let fieldNameHeader = "";
-            let warningTriggered = false;
-            const checkedPokemonIDs = [];
-            const bestPokemon = [null, null];
-            const saveFieldIDs = [];
-            for (const [fieldID, fieldName, pokemon] of result) {
-              if (fieldName != fieldNameHeader) {
-                if (fieldNameHeader) {
-                  output += "</br>";
+              Promise.all(pokemonOTPromiseList).then(() => {
+                // test for both genders [male, female], if genderless first is used
+                const diffOTPokemon = [[], []];
+                for (const [fieldID, fieldName, pokemon] of result) {
+                  if (pokemon.OT != username) {
+                    diffOTPokemon[pokemon.gender == "F" ? 1 : 0].push(pokemon);
+                  }
                 }
 
-                fieldNameHeader = fieldName;
-                output += `<u style="text-decoration: unset; font-size: 14pt">${fieldNameHeader}:</u></br>`;
-              }
+                const highestIVTotal = [-1, -1];
+                if (diffOTPokemon[0].length != 1) {
+                  if (!diffOTPokemon[0].length) {
+                    for (const [fieldID, fieldName, pokemon] of result) {
+                      if (pokemon.gender != "F") {
+                        diffOTPokemon[0].push(pokemon);
+                      }
+                    }
+                  }
 
-              if (!bestPokemon[pokemon.gender == "F" ? 1 : 0]) {
-                bestPokemon[pokemon.gender == "F" ? 1 : 0] = pokemon;
-              }
-
-              let release = "✅";
-              if (checkedPokemonIDs.includes(pokemon.id)) {
-                release = "⚠️";
-                warningTriggered = true;
-              } else if (pokemon.attributes.length) {
-                release = "❌";
-                output += "<b>vv Keep: Special vv</b></br>";
-              }
-
-              if (pokemon.perfect_ivs == 6) {
-                if (release == "✅") {
-                  release = "❌";
-                  output += "<b>vv Keep: 6IV vv</b></br>";
+                  for (const tiePokemon of diffOTPokemon[0]) {
+                    if (!highestIVTotal[0] || tiePokemon.iv_total > highestIVTotal[0]) {
+                      highestIVTotal[0] = tiePokemon.iv_total;
+                    }
+                  }
                 }
 
-                // attempts to find a OT different from the player from the 6IVs
-                if (!bestPokemon[pokemon.gender == "F" ? 1 : 0].OT || bestPokemon[pokemon.gender == "F" ? 1 : 0].OT == username) {
-                  bestPokemon[pokemon.gender == "F" ? 1 : 0] = pokemon;
+                if (diffOTPokemon[1].length != 1) {
+                  if (!diffOTPokemon[1].length) {
+                    for (const [fieldID, fieldName, pokemon] of result) {
+                      if (pokemon.gender == "F") {
+                        diffOTPokemon[1].push(pokemon);
+                      }
+                    }
+                  }
+
+                  for (const tiePokemon of diffOTPokemon[1]) {
+                    if (!highestIVTotal[1] || tiePokemon.iv_total > highestIVTotal[1]) {
+                      highestIVTotal[1] = tiePokemon.iv_total;
+                    }
+                  }
                 }
-              } else if (highestPerfectIVs[pokemon.gender == "F" ? 1 : 0].find(tiePokemon => tiePokemon.id === pokemon.id)) {
-                if (highestPerfectIVs[pokemon.gender == "F" ? 1 : 0].length == 1) {
-                  release = "❌";
-                  output += `<b>vv Keep: Only highest IV [${pokemon.gender}] vv</b></br>`;
-                  bestPokemon[pokemon.gender == "F" ? 1 : 0] = pokemon;
-                } else if (diffOTPokemon[pokemon.gender == "F" ? 1 : 0].find(diffOTPkm => diffOTPkm.id === pokemon.id)) {
-                  if (diffOTPokemon[pokemon.gender == "F" ? 1 : 0].length == 1) {
-                    release = "❌";
-                    output += `<b>vv Keep: Only different OT [${pokemon.gender}] vv</b></br>`;
+
+                for (const [fieldID, fieldName, pokemon] of result) {
+                  if (fieldName != fieldNameHeader) {
+                    if (fieldNameHeader) {
+                      output += "</br>";
+                    }
+
+                    fieldNameHeader = fieldName;
+                    output += `<u style="text-decoration: unset; font-size: 14pt">${fieldNameHeader}:</u></br>`;
+                  }
+
+                  if (!bestPokemon[pokemon.gender == "F" ? 1 : 0]) {
                     bestPokemon[pokemon.gender == "F" ? 1 : 0] = pokemon;
-                  } else if (pokemon.iv_total == highestIVTotal[pokemon.gender == "F" ? 1 : 0]) {
-                    highestIVTotal[pokemon.gender == "F" ? 1 : 0] = -1;
+                  }
+
+                  let release = "✅";
+                  if (checkedPokemonIDs.includes(pokemon.id)) {
+                    release = "⚠️";
+                    warningTriggered = true;
+                  } else if (pokemon.attributes.length) {
                     release = "❌";
-                    output += `<b>vv Keep: Highest IV total [${pokemon.gender}] vv</b></br>`;
-                    bestPokemon[pokemon.gender == "F" ? 1 : 0] = pokemon;
+                    output += "<b>vv Keep: Special vv</b></br>";
+                  }
+
+                  if (diffOTPokemon[pokemon.gender == "F" ? 1 : 0].find(diffOTPkm => diffOTPkm.id === pokemon.id)) {
+                    if (diffOTPokemon[pokemon.gender == "F" ? 1 : 0].length == 1) {
+                      release = "❌";
+                      output += `<b>vv Keep: Only different OT [${pokemon.gender}] vv</b></br>`;
+                      bestPokemon[pokemon.gender == "F" ? 1 : 0] = pokemon;
+                    } else if (pokemon.iv_total == highestIVTotal[pokemon.gender == "F" ? 1 : 0]) {
+                      highestIVTotal[pokemon.gender == "F" ? 1 : 0] = -1;
+                      release = "❌";
+                      output += `<b>vv Keep: Highest IV total [${pokemon.gender}] vv</b></br>`;
+                      bestPokemon[pokemon.gender == "F" ? 1 : 0] = pokemon;
+                    }
+                  }
+
+                  output += `${printPokemon(pokemon, release)}</br>`;
+
+                  let rangeIncludesFieldID = false;
+                  for (let oldFieldID of saveFieldIDs) {
+                    const lowerFieldIndex = oldFieldID % 50 ? Math.floor(oldFieldID / 50) * 50 : oldFieldID;
+                    const upperFieldIndex = oldFieldID % 50 ? Math.ceil(oldFieldID / 50) * 50 : oldFieldID + 50;
+                    if (lowerFieldIndex <= fieldID && fieldID < upperFieldIndex) { rangeIncludesFieldID = true; }
+                  }
+
+                  if (!rangeIncludesFieldID) {
+                    saveFieldIDs.push(fieldID);
+                  }
+
+                  if (!saveFieldIDs.length) {
+                    saveFieldIDs.push(fieldID);
+                  }
+
+                  checkedPokemonIDs.push(pokemon.id);
+                }
+
+                rangeInfoString = "Currently viewing all Pokemon of the species.</br></br>";
+                resolve();
+              });
+            } else {
+              const highestPerfectIVs = [[], []];
+              for (const [fieldID, fieldName, pokemon] of result) {
+                pokemon.userPerfectIVs = 0;
+                for (const iv of Object.values(pokemon.ivs)) {
+                  if (userMinIV <= iv && iv <= userMaxIV) {
+                    pokemon.userPerfectIVs++;
+                  }
+                }
+
+                if (!highestPerfectIVs[pokemon.gender == "F" ? 1 : 0].length || pokemon.userPerfectIVs > highestPerfectIVs[pokemon.gender == "F" ? 1 : 0][0].userPerfectIVs) {
+                  highestPerfectIVs[pokemon.gender == "F" ? 1 : 0] = [pokemon];
+                } else if (pokemon.userPerfectIVs == highestPerfectIVs[pokemon.gender == "F" ? 1 : 0][0].userPerfectIVs) {
+                  highestPerfectIVs[pokemon.gender == "F" ? 1 : 0].push(pokemon);
+                }
+              }
+
+              if (highestPerfectIVs[0].length != 1) {
+                for (const tiePokemon of highestPerfectIVs[0]) {
+                  if (!tiePokemon.OT) {
+                    // rate limit
+                    if (pokemonOTPromiseList.length > 9) {
+                      await Promise.all(pokemonOTPromiseList);
+                      pokemonOTPromiseList = [];
+                    }
+
+                    pokemonOTPromiseList.push(getPokemonOT(tiePokemon.id).then((result) => {
+                      tiePokemon.OT = result;
+                    }));
                   }
                 }
               }
 
-              output += `${printPokemon(pokemon, release)}</br>`;
+              if (highestPerfectIVs[1].length != 1) {
+                for (const tiePokemon of highestPerfectIVs[1]) {
+                  if (!tiePokemon.OT) {
+                    // rate limit
+                    if (pokemonOTPromiseList.length > 9) {
+                      await Promise.all(pokemonOTPromiseList);
+                      pokemonOTPromiseList = [];
+                    }
 
-              // if OTs were updated
-              if (pokemonOTPromiseList.length) {
-                let newOTPokemon = highestPerfectIVs[0].find(diffOTPkm => diffOTPkm.id === pokemon.id);
-                if (newOTPokemon) {
-                  inventory.fields.find(invField => invField.id === fieldID).pokemon.find(invPokemon => invPokemon.id === pokemon.id).OT = newOTPokemon.OT;
-                }
-
-                newOTPokemon = highestPerfectIVs[1].find(diffOTPkm => diffOTPkm.id === pokemon.id);
-                if (newOTPokemon) {
-                  inventory.fields.find(invField => invField.id === fieldID).pokemon.find(invPokemon => invPokemon.id === pokemon.id).OT = newOTPokemon.OT;
-                }
-
-                let rangeIncludesFieldID = false;
-                for (let oldFieldID of saveFieldIDs) {
-                  const lowerFieldIndex = oldFieldID % 50 ? Math.floor(oldFieldID / 50) * 50 : oldFieldID;
-                  const upperFieldIndex = oldFieldID % 50 ? Math.ceil(oldFieldID / 50) * 50 : oldFieldID + 50;
-                  if (lowerFieldIndex <= fieldID && fieldID < upperFieldIndex) { rangeIncludesFieldID = true; }
-                }
-
-                if (!rangeIncludesFieldID) {
-                  saveFieldIDs.push(fieldID);
-                }
-
-                if (!saveFieldIDs.length) {
-                  saveFieldIDs.push(fieldID);
+                    pokemonOTPromiseList.push(getPokemonOT(tiePokemon.id).then((result) => {
+                      tiePokemon.OT = result;
+                    }));
+                  }
                 }
               }
 
-              checkedPokemonIDs.push(pokemon.id);
-            }
+              Promise.all(pokemonOTPromiseList).then(() => {
+                const diffOTPokemon = [[], []];
+                if (highestPerfectIVs[0].length != 1) {
+                  for (const tiePokemon of highestPerfectIVs[0]) {
+                    if (tiePokemon.OT != username) {
+                      diffOTPokemon[0].push(tiePokemon);
+                    }
+                  }
+                }
 
-            output = `<i>Pokemon with checkmarks are recommended for release based on IVs and then original trainers.${warningTriggered ? "</br></br>One or more of your Pokemon were seen more than once in the inventory and were marked with a warning sign. You can remove these copies by revisiting the field(s) you moved the Pokemon from." : ""}</i></br></br>${result.length > 2 ? `<b style="text-align: center">Best ${fieldPokemonSpecies} family pairing found:</b></br>${bestPokemon[0] ? `</br>${printPokemon(bestPokemon[0])}` : ""}${bestPokemon[1] ? `</br>${printPokemon(bestPokemon[1])}` : ""}</br></br></br>` : ""}Sally reports ${surveyTotal} Pokemon in the ${fieldPokemonSpecies} evo line; I know of ${result.length}:</br><p>${output}</p>`;
-            log(output, true);
+                if (highestPerfectIVs[1].length != 1) {
+                  for (const tiePokemon of highestPerfectIVs[1]) {
+                    if (tiePokemon.OT != username) {
+                      diffOTPokemon[1].push(tiePokemon);
+                    }
+                  }
+                }
 
-            for (const fieldID of saveFieldIDs) {
-              saveInventory(fieldID);
+                const highestIVTotal = [-1, -1];
+                if (diffOTPokemon[0].length != 1) {
+                  if (!diffOTPokemon[0].length) {
+                    diffOTPokemon[0] = highestPerfectIVs[0];
+                  }
+
+                  for (const tiePokemon of diffOTPokemon[0]) {
+                    if (!highestIVTotal[0] || tiePokemon.iv_total > highestIVTotal[0]) {
+                      highestIVTotal[0] = tiePokemon.iv_total;
+                    }
+                  }
+                }
+
+                if (diffOTPokemon[1].length != 1) {
+                  if (!diffOTPokemon[1].length) {
+                    diffOTPokemon[1] = highestPerfectIVs[1];
+                  }
+
+                  for (const tiePokemon of diffOTPokemon[1]) {
+                    if (!highestIVTotal[1] || tiePokemon.iv_total > highestIVTotal[1]) {
+                      highestIVTotal[1] = tiePokemon.iv_total;
+                    }
+                  }
+                }
+
+                for (const [fieldID, fieldName, pokemon] of result) {
+                  if (fieldName != fieldNameHeader) {
+                    if (fieldNameHeader) {
+                      output += "</br>";
+                    }
+
+                    fieldNameHeader = fieldName;
+                    output += `<u style="text-decoration: unset; font-size: 14pt">${fieldNameHeader}:</u></br>`;
+                  }
+
+                  if (!bestPokemon[pokemon.gender == "F" ? 1 : 0]) {
+                    bestPokemon[pokemon.gender == "F" ? 1 : 0] = pokemon;
+                  }
+
+                  let release = "✅";
+                  if (checkedPokemonIDs.includes(pokemon.id)) {
+                    release = "⚠️";
+                    warningTriggered = true;
+                  } else if (pokemon.attributes.length) {
+                    release = "❌";
+                    output += "<b>vv Keep: Special vv</b></br>";
+                  }
+
+                  if (pokemon.userPerfectIVs == 6) {
+                    if (release == "✅") {
+                      release = "❌";
+                      output += "<b>vv Keep: 6 Perfect IVs vv</b></br>";
+                    }
+
+                    // attempts to find a OT different from the player from the 6IVs
+                    if (!bestPokemon[pokemon.gender == "F" ? 1 : 0].OT || bestPokemon[pokemon.gender == "F" ? 1 : 0].OT == username) {
+                      bestPokemon[pokemon.gender == "F" ? 1 : 0] = pokemon;
+                    }
+                  } else if (highestPerfectIVs[pokemon.gender == "F" ? 1 : 0].find(tiePokemon => tiePokemon.id === pokemon.id)) {
+                    if (highestPerfectIVs[pokemon.gender == "F" ? 1 : 0].length == 1) {
+                      release = "❌";
+                      output += `<b>vv Keep: Only highest IV [${pokemon.gender}] vv</b></br>`;
+                      bestPokemon[pokemon.gender == "F" ? 1 : 0] = pokemon;
+                    } else if (diffOTPokemon[pokemon.gender == "F" ? 1 : 0].find(diffOTPkm => diffOTPkm.id === pokemon.id)) {
+                      if (diffOTPokemon[pokemon.gender == "F" ? 1 : 0].length == 1) {
+                        release = "❌";
+                        output += `<b>vv Keep: Only different OT [${pokemon.gender}] vv</b></br>`;
+                        bestPokemon[pokemon.gender == "F" ? 1 : 0] = pokemon;
+                      } else if (pokemon.iv_total == highestIVTotal[pokemon.gender == "F" ? 1 : 0]) {
+                        highestIVTotal[pokemon.gender == "F" ? 1 : 0] = -1;
+                        release = "❌";
+                        output += `<b>vv Keep: Highest IV total [${pokemon.gender}] vv</b></br>`;
+                        bestPokemon[pokemon.gender == "F" ? 1 : 0] = pokemon;
+                      }
+                    }
+                  }
+
+                  output += `${printPokemon(pokemon, release)}</br>`;
+
+                  // if OTs were updated
+                  if (pokemonOTPromiseList.length) {
+                    let newOTPokemon = highestPerfectIVs[0].find(diffOTPkm => diffOTPkm.id === pokemon.id);
+                    if (newOTPokemon) {
+                      inventory.fields.find(invField => invField.id === fieldID).pokemon.find(invPokemon => invPokemon.id === pokemon.id).OT = newOTPokemon.OT;
+                    }
+
+                    newOTPokemon = highestPerfectIVs[1].find(diffOTPkm => diffOTPkm.id === pokemon.id);
+                    if (newOTPokemon) {
+                      inventory.fields.find(invField => invField.id === fieldID).pokemon.find(invPokemon => invPokemon.id === pokemon.id).OT = newOTPokemon.OT;
+                    }
+
+                    let rangeIncludesFieldID = false;
+                    for (let oldFieldID of saveFieldIDs) {
+                      const lowerFieldIndex = oldFieldID % 50 ? Math.floor(oldFieldID / 50) * 50 : oldFieldID;
+                      const upperFieldIndex = oldFieldID % 50 ? Math.ceil(oldFieldID / 50) * 50 : oldFieldID + 50;
+                      if (lowerFieldIndex <= fieldID && fieldID < upperFieldIndex) { rangeIncludesFieldID = true; }
+                    }
+
+                    if (!rangeIncludesFieldID) {
+                      saveFieldIDs.push(fieldID);
+                    }
+
+                    if (!saveFieldIDs.length) {
+                      saveFieldIDs.push(fieldID);
+                    }
+                  }
+
+                  checkedPokemonIDs.push(pokemon.id);
+                }
+
+                rangeInfoString = (userMinIV == userMaxIV) ? (userMaxIV != 31 ? `Currently considering ${userMaxIV} IVs as Perfects.</br></br>` : "") : `Currently considering IVs between ${userMinIV} and ${userMaxIV} as Perfects.</br></br>`
+                resolve();
+              });
             }
           });
+
+          output = `<i>Pokemon with checkmarks are recommended for release based on IVs and then original trainers.${warningTriggered ? "</br></br>One or more of your Pokemon were seen more than once in the inventory and were marked with a warning sign. You can remove these copies by revisiting the field(s) you moved the Pokemon from." : ""}</i></br></br>${rangeInfoString}${result.length > 2 ? `<b style="text-align: center">Best ${fieldPokemonSpecies} family pairing found:</b></br>${bestPokemon[0] ? `</br>${printPokemon(bestPokemon[0])}` : ""}${bestPokemon[1] ? `</br>${printPokemon(bestPokemon[1])}` : ""}</br></br></br>` : ""}Sally reports ${surveyTotal} Pokemon in the ${fieldPokemonSpecies} evo line; I know of ${result.length}:</br><p>${output}</p>`;
+          log(output, true);
+
+          for (const fieldID of saveFieldIDs) {
+            saveInventory(fieldID);
+          }
         });
       });
     });
