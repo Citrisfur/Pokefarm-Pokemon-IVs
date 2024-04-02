@@ -551,7 +551,7 @@ function printPokemon(pokemon, release = "❌") {
   }
   ivString = ivString.substring(0, ivString.length - 1);
 
-  return `${pokemon.attributes.length ? `${pokemon.attributes[0]}: ` : ""}<a href="/summary/${pokemon.id}">${pokemon.species}${pokemon.form ? ` [${pokemon.form}]` : ""}</a> [${pokemon.gender}] ${ivString}${userMinIV == 0 && userMaxIV == 31 ? "" : ` ${userPerfectIVs}`} = ${pokemon.iv_total} ${release}${pokemon.OT ? ` ${pokemon.OT}` : ""}`
+  return `${pokemon.attributes.length ? `${pokemon.attributes[0]}: ` : ""}<a href="/summary/${pokemon.id}">${pokemon.name != pokemon.species ? pokemon.name : `${pokemon.name}${pokemon.form ? ` [${pokemon.form}]` : ""}`}</a> [${pokemon.gender}]${(userPerfectIVs == 6 || userPerfectIVs == 5) ? ` ${pokemon.nature}` : ""} ${ivString}${userMinIV == 0 && userMaxIV == 31 ? "" : ` ${userPerfectIVs}`} = ${pokemon.iv_total} ${release}${pokemon.OT ? ` ${pokemon.OT}` : ""}`
 }
 
 
