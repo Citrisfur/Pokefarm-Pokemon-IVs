@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         PokeFarm Pokemon IVs (Dev Build)
+// @name         PokeFarm Pokemon IVs
 // @description  Display, catalogue and compare IVs for a user's owned Pokemon in PokeFarm
-// @version      v0.0.5
+// @version      v0.0.4
 // @author       Nathan Coy
 // @match        https://pokefarm.com/fields
 // @namespace    https://github.com/Citrisfur/
@@ -14,7 +14,7 @@
 
 'use strict';
 
-console.log("Running PPIVsv0.0.5");
+console.log("Running PPIVsv0.0.4");
 
 const $ = unsafeWindow.$;
 const username = $("#globaluserlink").text();
@@ -348,7 +348,7 @@ async function loadInventory() {
             }).success((response) => {
               $(response.html).find(".fieldmontip").each(function() {
                 const pokemon = {};
-                pokemon.id = $(this).find("h3").eq(0).find("a").attr("href").split('/')[2];
+                pokemon.id = $(this).find("h3").eq(0).find("a").attr("href").slice(-5);
                 pokemon.name = $(this).find("h3").eq(0).text();
                 pokemon.species = $(this).find(".icons").parent().text().substring(10, $(this).find(".icons").parent().text().length - 1);
 
@@ -594,7 +594,7 @@ async function fieldHandler() {
         }
 
         fieldPokemonPromiseList.push(new Promise(async (resolve, reject) => {
-          const fieldPokemonID = $(fieldmontips[i]).find("h3").eq(0).find("a").attr("href").split('/')[2];
+          const fieldPokemonID = $(fieldmontips[i]).find("h3").eq(0).find("a").attr("href").slice(-5);
           const fieldPokemonName = $(fieldmontips[i]).find("h3").eq(0).text();
           const fieldPokemonSpecies = $(fieldmontips[i]).find(".icons").parent().text().substring(10, $(fieldmontips[i]).find(".icons").parent().text().length - 1);
           const fieldPokemonForm = $(fieldmontips[i]).find(".forme").length ? $(fieldmontips[i]).find(".forme").text().substring(7) : null;
